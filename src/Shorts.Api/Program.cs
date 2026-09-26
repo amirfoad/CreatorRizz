@@ -27,6 +27,16 @@ app.MapPost("/productions", (CreateProductionRequest request, ProductionStore st
     var production = store.Create(request.CandidateId);
     return Results.Created($"/productions/{production.Id}", new ProductionResponse(production.Id, production.State, production.Version));
 });
+app.MapPost("/productions/{id:guid}/scripts/draft-from-research", (Guid id, ProductionStore productionStore, CandidateStore candidateStore) =>
+{
+    if (!productionStore.TryGet(id, out var production) || production is null) return Results.NotFound();
+    if (!candidateStore.TryGet(production.TopicCandidateId, out var candidate) || candidate is null) return Results.NotFound();
+    if (!candidateStore.TryGetResearchPack(candidate.Id, out var researchPack) || researchPack is null)
+        return Results.Conflict(new { error = "Research pack is required before drafting a script." });
+    return ExecuteWithResult(
+        () => ScriptDraftComposer.Compose(candidate, researchPack, candidateStore.GetSources(candidate.Id)),
+        draft => Results.Ok(productionStore.AddScript(id, draft.Body, draft.ClaimMapJson)));
+});
 app.MapGet("/productions/{id:guid}", (Guid id, ProductionStore store) =>
     store.TryGet(id, out var production) && production is not null
         ? Results.Ok(new ProductionResponse(production.Id, production.State, production.Version))

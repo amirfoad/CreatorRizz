@@ -77,4 +77,19 @@ public sealed class ProductionStateTests
         Assert.Throws<WorkflowRuleViolation>(() => ResearchPolicy.EnsureScriptHasClaimMap("A claim", "{}"));
         ResearchPolicy.EnsureScriptHasClaimMap("A claim", "{\"claim\":\"source-1\"}");
     }
+
+    [Fact]
+    public void DraftComposerCreatesACitedScriptFromResearch()
+    {
+        var candidate = new TopicCandidate { CanonicalUrl = "https://example.com/video", Title = "A story", Creator = "Creator", PublishedAt = DateTimeOffset.UtcNow };
+        var pack = new ResearchPack { TopicCandidateId = candidate.Id, Summary = "The event has been verified.", FactsJson = "[]", UncertaintyJson = "[]" };
+        var sources = new[]
+        {
+            new SourceItem { TopicCandidateId = candidate.Id, Url = "https://example.com/source-1", Publisher = "One", Excerpt = "First verified fact.", ReliabilityScore = 80 },
+            new SourceItem { TopicCandidateId = candidate.Id, Url = "https://example.com/source-2", Publisher = "Two", Excerpt = "Second verified fact.", ReliabilityScore = 75 }
+        };
+        var draft = ScriptDraftComposer.Compose(candidate, pack, sources);
+        Assert.Contains("source-1", draft.ClaimMapJson);
+        Assert.Contains("The event has been verified.", draft.Body);
+    }
 }
