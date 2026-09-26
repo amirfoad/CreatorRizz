@@ -14,9 +14,9 @@ CreatorRizz ابزار داخلی برای کشف سوژه، تولید روای
 
 ## ساختار
 
-- `src/Shorts.Api`: HTTP API و health endpoint
+- `src/Shorts.Api`: HTTP API، validation مرز HTTP و health endpoint
 - `src/Shorts.Domain`: مدل و ruleهای دامنه
-- `src/Shorts.Infrastructure`: configuration و adapterهای بیرونی
+- `src/Shorts.Infrastructure`: configuration، adapterهای بیرونی و persistence توسعه‌ای (`Persistence/`)
 - `src/Shorts.Workers`: workerهای پس زمینه
 - `web`: React operations dashboard
 
@@ -34,3 +34,5 @@ API در development با `dotnet run --project src/Shorts.Api` اجرا می‌
 PostgreSQL schema در `db/init/001_schema.sql` قرار دارد و هنگام ساخت volume تازه توسط Docker Compose اجرا می‌شود.
 
 Discovery اولیه RSS در `src/Shorts.Infrastructure/RssDiscovery.cs` قرار دارد. قبل از اتصال feedهای واقعی، آن‌ها باید در allowlist عملیاتی پروژه ثبت شوند.
+
+تا زمان اتصال PostgreSQL، داده‌های Candidate و Production در `InMemoryCandidateStore` و `InMemoryProductionStore` نگه‌داری می‌شوند؛ با توقف API حذف خواهند شد. این adapterها عمداً خارج از لایه API و زیر `src/Shorts.Infrastructure/Persistence` قرار دارند.

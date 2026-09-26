@@ -1,5 +1,6 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Shorts.Infrastructure.Persistence;
 
 namespace Shorts.Infrastructure;
 
@@ -25,6 +26,8 @@ public static class ServiceCollectionExtensions
                 "External service endpoints must be configured.")
             .ValidateOnStart();
         services.AddSingleton<IBackgroundJobQueue, InMemoryBackgroundJobQueue>();
+        services.AddSingleton<InMemoryCandidateStore>();
+        services.AddSingleton<InMemoryProductionStore>();
         return services;
     }
 }

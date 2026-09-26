@@ -14,6 +14,7 @@
 - [x] لوگو و tokenهای رنگ CreatorRizz در رابط وب
 - [x] راهنمای توسعه AGENTS.md با اصول Clean Architecture، KISS، YAGNI و DRY
 - [x] بازبینی invariantهای Candidate، Research Pack و publish asset انجام شد
+- [x] انتقال persistence موقت از API به Infrastructure/Persistence و تفکیک مرز HTTP از storage
 - [ ] اتصال EF Core و Npgsql به PostgreSQL
 - [ ] provider واقعی AI، TTS و FFmpeg
 - [ ] React operations dashboard

@@ -1,4 +1,5 @@
 using Shorts.Infrastructure;
+using Shorts.Infrastructure.Persistence;
 using Shorts.Api;
 using Shorts.Domain;
 using System.Text.Json;
@@ -7,8 +8,6 @@ using System.Threading.RateLimiting;
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddShortsInfrastructure(builder.Configuration);
 builder.Services.AddHealthChecks().AddCheck<ConfigurationHealthCheck>("configuration", tags: ["ready"]);
-builder.Services.AddSingleton<ProductionStore>();
-builder.Services.AddSingleton<CandidateStore>();
 builder.Services.AddRateLimiter(options => options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(_ =>
     RateLimitPartition.GetFixedWindowLimiter("api", _ => new FixedWindowRateLimiterOptions
 {
@@ -24,24 +23,24 @@ app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseRateLimiter();
 app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions { Predicate = _ => false });
 app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
-app.MapGet("/candidates", (CandidateStore store) => Results.Ok(store.List()));
-app.MapPost("/candidates", (CreateCandidateRequest request, CandidateStore store) =>
-    ExecuteWithResult(() => store.Add(request), candidate => Results.Created($"/candidates/{candidate.Id}", candidate)));
-app.MapPost("/candidates/{id:guid}/sources", (Guid id, CreateSourceRequest request, CandidateStore store) =>
-    Execute(() => store.AddSource(id, request)));
-app.MapGet("/candidates/{id:guid}/sources", (Guid id, CandidateStore store) =>
+app.MapGet("/candidates", (InMemoryCandidateStore store) => Results.Ok(store.List()));
+app.MapPost("/candidates", (CreateCandidateRequest request, InMemoryCandidateStore store) =>
+    ExecuteWithResult(() => store.Add(request.CanonicalUrl, request.Title, request.Creator, request.PublishedAt, request.Signals), candidate => Results.Created($"/candidates/{candidate.Id}", candidate)));
+app.MapPost("/candidates/{id:guid}/sources", (Guid id, CreateSourceRequest request, InMemoryCandidateStore store) =>
+    Execute(() => store.AddSource(id, request.Url, request.Publisher, request.Excerpt, request.ReliabilityScore)));
+app.MapGet("/candidates/{id:guid}/sources", (Guid id, InMemoryCandidateStore store) =>
     store.TryGet(id, out _) ? Results.Ok(store.GetSources(id)) : Results.NotFound());
-app.MapPost("/candidates/{id:guid}/research-pack", (Guid id, CreateResearchPackRequest request, CandidateStore store) =>
-    ExecuteWithResult(() => store.CreateResearchPack(id, request), Results.Ok));
-app.MapGet("/candidates/{id:guid}/research-pack", (Guid id, CandidateStore store) =>
+app.MapPost("/candidates/{id:guid}/research-pack", (Guid id, CreateResearchPackRequest request, InMemoryCandidateStore store) =>
+    ExecuteWithResult(() => store.CreateResearchPack(id, request.Summary, request.FactsJson, request.UncertaintyJson), Results.Ok));
+app.MapGet("/candidates/{id:guid}/research-pack", (Guid id, InMemoryCandidateStore store) =>
     store.TryGetResearchPack(id, out var pack) && pack is not null ? Results.Ok(pack) : Results.NotFound());
-app.MapPost("/productions", (CreateProductionRequest request, ProductionStore store, CandidateStore candidateStore) =>
+app.MapPost("/productions", (CreateProductionRequest request, InMemoryProductionStore store, InMemoryCandidateStore candidateStore) =>
 {
     if (!candidateStore.TryGet(request.CandidateId, out _)) return Results.NotFound();
     var production = store.Create(request.CandidateId);
     return Results.Created($"/productions/{production.Id}", new ProductionResponse(production.Id, production.State, production.Version));
 });
-app.MapPost("/productions/{id:guid}/scripts/draft-from-research", (Guid id, ProductionStore productionStore, CandidateStore candidateStore) =>
+app.MapPost("/productions/{id:guid}/scripts/draft-from-research", (Guid id, InMemoryProductionStore productionStore, InMemoryCandidateStore candidateStore) =>
 {
     if (!productionStore.TryGet(id, out var production) || production is null) return Results.NotFound();
     if (!candidateStore.TryGet(production.TopicCandidateId, out var candidate) || candidate is null) return Results.NotFound();
@@ -51,17 +50,17 @@ app.MapPost("/productions/{id:guid}/scripts/draft-from-research", (Guid id, Prod
         () => ScriptDraftComposer.Compose(candidate, researchPack, candidateStore.GetSources(candidate.Id)),
         draft => Results.Ok(productionStore.AddScript(id, draft.Body, draft.ClaimMapJson)));
 });
-app.MapGet("/productions/{id:guid}", (Guid id, ProductionStore store) =>
+app.MapGet("/productions/{id:guid}", (Guid id, InMemoryProductionStore store) =>
     store.TryGet(id, out var production) && production is not null
         ? Results.Ok(new ProductionResponse(production.Id, production.State, production.Version))
         : Results.NotFound());
-app.MapGet("/productions/{id:guid}/assets", (Guid id, ProductionStore store) =>
+app.MapGet("/productions/{id:guid}/assets", (Guid id, InMemoryProductionStore store) =>
     store.TryGet(id, out _) ? Results.Ok(store.GetAssets(id)) : Results.NotFound());
-app.MapGet("/productions/{id:guid}/scripts", (Guid id, ProductionStore store) =>
+app.MapGet("/productions/{id:guid}/scripts", (Guid id, InMemoryProductionStore store) =>
     store.TryGet(id, out _) ? Results.Ok(store.GetScripts(id)) : Results.NotFound());
-app.MapPost("/productions/{id:guid}/scripts", (Guid id, CreateScriptRequest request, ProductionStore store) =>
+app.MapPost("/productions/{id:guid}/scripts", (Guid id, CreateScriptRequest request, InMemoryProductionStore store) =>
     ExecuteWithResult(() => store.AddScript(id, request.Body, request.ClaimMapJson), Results.Ok));
-app.MapPost("/productions/{id:guid}/tts", async (Guid id, QueueTtsRequest request, ProductionStore store, IBackgroundJobQueue queue, CancellationToken cancellationToken) =>
+app.MapPost("/productions/{id:guid}/tts", async (Guid id, QueueTtsRequest request, InMemoryProductionStore store, IBackgroundJobQueue queue, CancellationToken cancellationToken) =>
 {
     if (!store.TryGet(id, out var production) || production is null) return Results.NotFound();
     if (production.State != ProductionState.ScriptApproved) return Results.Conflict(new { error = "Script approval is required before TTS." });
@@ -72,7 +71,7 @@ app.MapPost("/productions/{id:guid}/tts", async (Guid id, QueueTtsRequest reques
     await queue.EnqueueAsync("tts", JsonSerializer.Serialize(new { payload.ProductionId, payload.Text, voiceId = payload.EffectiveVoiceId, payload.Speed }), cancellationToken);
     return Results.Accepted($"/productions/{id}", new { voiceId = payload.EffectiveVoiceId, status = "queued" });
 });
-app.MapPost("/productions/{id:guid}/render", async (Guid id, RenderManifest manifest, ProductionStore store, IBackgroundJobQueue queue, CancellationToken cancellationToken) =>
+app.MapPost("/productions/{id:guid}/render", async (Guid id, RenderManifest manifest, InMemoryProductionStore store, IBackgroundJobQueue queue, CancellationToken cancellationToken) =>
 {
     try
     {
@@ -83,9 +82,9 @@ app.MapPost("/productions/{id:guid}/render", async (Guid id, RenderManifest mani
     catch (KeyNotFoundException) { return Results.NotFound(); }
     catch (WorkflowRuleViolation exception) { return Results.Conflict(new { error = exception.Message }); }
 });
-app.MapGet("/productions/{id:guid}/audit-events", (Guid id, ProductionStore store) =>
+app.MapGet("/productions/{id:guid}/audit-events", (Guid id, InMemoryProductionStore store) =>
     store.TryGet(id, out _) ? Results.Ok(store.GetAuditEvents(id)) : Results.NotFound());
-app.MapPost("/productions/{id:guid}/assets", (Guid id, AttachAssetRequest request, ProductionStore store) =>
+app.MapPost("/productions/{id:guid}/assets", (Guid id, AttachAssetRequest request, InMemoryProductionStore store) =>
     Execute(() => store.AttachAsset(id, new Asset
     {
         ObjectKey = request.ObjectKey,
@@ -95,9 +94,9 @@ app.MapPost("/productions/{id:guid}/assets", (Guid id, AttachAssetRequest reques
         LicenseEvidence = request.LicenseEvidence,
         Checksum = request.Checksum
     })));
-app.MapPost("/productions/{id:guid}/reviews/{kind}/submit", (Guid id, string kind, ProductionStore store) =>
+app.MapPost("/productions/{id:guid}/reviews/{kind}/submit", (Guid id, string kind, InMemoryProductionStore store) =>
     Execute(() => store.Submit(id, ParseKind(kind))));
-app.MapPost("/productions/{id:guid}/reviews/{kind}", (Guid id, string kind, ReviewRequest request, HttpContext context, ProductionStore store) =>
+app.MapPost("/productions/{id:guid}/reviews/{kind}", (Guid id, string kind, ReviewRequest request, HttpContext context, InMemoryProductionStore store) =>
 {
     var role = context.Request.Headers["X-Role"].ToString();
     if (!string.Equals(role, "Reviewer", StringComparison.OrdinalIgnoreCase)) return Results.Forbid();

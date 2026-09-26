@@ -1,9 +1,10 @@
 using System.Collections.Concurrent;
 using Shorts.Domain;
 
-namespace Shorts.Api;
+namespace Shorts.Infrastructure.Persistence;
 
-public sealed class ProductionStore
+/// <summary>Development-only persistence adapter. Data is lost when the process stops.</summary>
+public sealed class InMemoryProductionStore
 {
     private readonly ConcurrentDictionary<Guid, Production> _productions = new();
     private readonly ConcurrentQueue<ReviewDecision> _decisions = new();
