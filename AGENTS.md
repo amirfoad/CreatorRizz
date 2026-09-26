@@ -9,8 +9,8 @@ CreatorRizz produces commentary and storytelling Shorts through a workflow that 
 Run these before handing off a code change:
 
 ```powershell
-dotnet build ShortsAutomation.sln --no-restore --configuration Release
-dotnet test ShortsAutomation.sln --no-build --configuration Release
+dotnet build CreatorRizz.sln --no-restore --configuration Release
+dotnet test CreatorRizz.sln --no-build --configuration Release
 ```
 
 Run frontend checks when the Node dependencies are available:
@@ -25,10 +25,11 @@ npm run build
 
 Keep the backend in Clean Architecture. Dependencies point inward only:
 
-- `Shorts.Domain` contains business concepts, lifecycle rules, policies, and no framework, database, HTTP, filesystem, or provider dependency.
-- `Shorts.Infrastructure` contains adapters for storage, queues, AI, TTS, YouTube, and other external systems. Translate their data at this boundary.
-- `Shorts.Api` contains HTTP request/response shapes, authentication, dependency wiring, and orchestration. It must not duplicate domain rules.
-- `Shorts.Workers` contains asynchronous job execution. Jobs must be idempotent and their effects visible in logs and audit events.
+- `CreatorRizz.Domain` contains business concepts, lifecycle rules, policies, and no framework, database, HTTP, filesystem, or provider dependency.
+- `CreatorRizz.Application` contains use cases and the ports they need. It depends only on Domain.
+- `CreatorRizz.Infrastructure` contains adapters for storage, queues, AI, TTS, YouTube, and other external systems. Translate their data at this boundary.
+- `CreatorRizz.Api` contains HTTP request/response shapes, authentication, dependency wiring, and orchestration. It must not duplicate domain rules.
+- `CreatorRizz.Workers` contains asynchronous job execution. Jobs must be idempotent and their effects visible in logs and audit events.
 
 Do not make the domain depend on Infrastructure, API, Worker, EF Core, HTTP clients, or provider SDKs. Add an interface only when it represents a real external boundary or behavior that actually varies.
 

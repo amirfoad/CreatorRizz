@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <ItemGroup>
+    <ProjectReference Include="..\CreatorRizz.Domain\CreatorRizz.Domain.csproj" />
+    <ProjectReference Include="..\CreatorRizz.Infrastructure\CreatorRizz.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>

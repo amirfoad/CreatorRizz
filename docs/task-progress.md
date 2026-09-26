@@ -19,6 +19,7 @@
 - [x] انتقال correlation و security middlewareهای API به پوشه Middleware
 - [x] Swagger/OpenAPI توسعه‌ای برای endpointهای API
 - [x] تفکیک لایه Domain به مدل‌ها، policyها، workflow، rendering، captions، scoring و scripting
+- [x] ایجاد CreatorRizz.Application با use caseهای CreatorRizz و portهای persistence/job queue
 - [ ] اتصال EF Core و Npgsql به PostgreSQL
 - [ ] provider واقعی AI، TTS و FFmpeg
 - [ ] React operations dashboard

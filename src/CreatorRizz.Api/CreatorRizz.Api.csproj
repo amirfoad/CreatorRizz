@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <ItemGroup>
+    <ProjectReference Include="..\CreatorRizz.Domain\CreatorRizz.Domain.csproj" />
+    <ProjectReference Include="..\CreatorRizz.Application\CreatorRizz.Application.csproj" />
+    <ProjectReference Include="..\CreatorRizz.Infrastructure\CreatorRizz.Infrastructure.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
+  </ItemGroup>
+</Project>

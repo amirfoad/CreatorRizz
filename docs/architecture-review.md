@@ -13,6 +13,7 @@
 - middlewareهای cross-cutting شامل correlation ID و security header در `Api/Middleware` متمرکز شدند.
 - پیکربندی Swagger در `Api/OpenApi` قرار گرفت و فقط در محیط Development فعال است.
 - `Domain/Entities.cs` به مدل‌های تک‌مسئولیتی تقسیم شد؛ caption validation نیز از render manifest جدا شد تا SRT فقط به invariantهای caption وابسته باشد.
+- لایه `CreatorRizz.Application` افزوده شد؛ API دیگر مستقیماً به store یا queue Infrastructure وابسته نیست و workflow را از use case مرکزی دریافت می‌کند.
 
 ### کار باقی‌مانده
 

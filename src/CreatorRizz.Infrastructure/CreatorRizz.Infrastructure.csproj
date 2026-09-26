@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <ProjectReference Include="..\CreatorRizz.Domain\CreatorRizz.Domain.csproj" />
+    <ProjectReference Include="..\CreatorRizz.Application\CreatorRizz.Application.csproj" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+</Project>
