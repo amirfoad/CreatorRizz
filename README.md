@@ -19,8 +19,10 @@ CreatorRizz ابزار داخلی برای کشف سوژه، تولید روای
 - `src/CreatorRizz.Api`: HTTP API، validation مرز HTTP و health endpoint
 - `src/CreatorRizz.Domain`: مدل و ruleهای دامنه؛ شامل `Models/`، `Policies/`، `Workflow/`، `Rendering/`، `Captions/`، `Scoring/` و `Scripting/`
 - `src/CreatorRizz.Application`: use caseها و portهای موردنیاز برای اجرای workflow
-- `src/CreatorRizz.Infrastructure`: configuration، adapterهای بیرونی و persistence توسعه‌ای (`Persistence/`)
+- `src/CreatorRizz.Infrastructure`: configuration، adapterهای بیرونی، EF Core و migrationهای PostgreSQL (`Persistence/`)
 - `src/CreatorRizz.Workers`: workerهای پس زمینه
+- `tests/CreatorRizz.Domain.Tests`: تست‌های دامنه و قرارداد adapterها
+- `tests/CreatorRizz.Persistence.Tests`: تست‌های integration روی PostgreSQL واقعی
 - `web`: React operations dashboard
 
 ## توسعه محلی
@@ -36,13 +38,53 @@ API در development با `dotnet run --project src/CreatorRizz.Api` اجرا م
 
 در محیط `Development`، Swagger UI از مسیر `/swagger` و سند OpenAPI از `/swagger/v1/swagger.json` در دسترس است. این UI در محیط‌های غیرdevelopment فعال نمی‌شود.
 
-PostgreSQL schema در `db/init/001_schema.sql` قرار دارد و هنگام ساخت volume تازه توسط Docker Compose اجرا می‌شود.
+## PostgreSQL و schema
 
-`CreatorRizzDbContext` در `src/CreatorRizz.Infrastructure/Persistence` مدل‌های اصلی را به PostgreSQL نگاشت می‌کند. در وضعیت فعلی repositoryهای workflow هنوز adapterهای in-memory هستند؛ جایگزینی آن‌ها با repositoryهای EF Core مرحلهٔ بعدی است.
+EF Core تنها مالک schema است. migrationها در `src/CreatorRizz.Infrastructure/Persistence/Migrations` قرار دارند و API پیش از پذیرش ترافیک آن‌ها را اجرا می‌کند؛ شکست migration عمداً startup را متوقف می‌کند. فایل SQL دستی وجود ندارد تا schema دو منبع نداشته باشد.
 
-Discovery اولیه RSS در `src/CreatorRizz.Infrastructure/RssDiscovery.cs` قرار دارد. قبل از اتصال feedهای واقعی، آن‌ها باید در allowlist عملیاتی پروژه ثبت شوند.
+برای ساخت migration تازه:
 
-تا زمان اتصال PostgreSQL، داده‌های Candidate و Production در `InMemoryCandidateStore` و `InMemoryProductionStore` نگه‌داری می‌شوند؛ با توقف API حذف خواهند شد. این adapterها عمداً خارج از لایه API و زیر `src/CreatorRizz.Infrastructure/Persistence` قرار دارند.
+```powershell
+dotnet ef migrations add <Name> --project src/CreatorRizz.Infrastructure --output-dir Persistence\Migrations
+```
+
+`CreatorRizzDesignTimeDbContextFactory` فقط برای همین دستور است و connection string آن هرگز به دیتابیس وصل نمی‌شود.
+
+`PostgresCandidateRepository` و `PostgresProductionRepository` تنها adapterهای persistence هستند و در `ServiceCollectionExtensions` به‌عنوان scoped ثبت می‌شوند. ترجمهٔ خطاهای provider در `DbContextSaveExtensions` انجام می‌شود تا repositoryها exception خام Npgsql را افشا نکنند.
+
+قیدهای database که در مدل EF تعریف شده‌اند: `canonical_url` یکتا، `(production_id, version)` یکتا برای script version، `reliability_score` بین ۰ تا ۱۰۰، و foreign key برای جلوگیری از `AssetUsage` بدون Production یا Asset. جدول‌های تاریخی (`productions`، `script_versions`، `review_decisions`) `ON DELETE RESTRICT` دارند تا تاریخچه با حذف والد پاک نشود.
+
+## مسیر کامل workflow
+
+هر production از این مسیر عبور می‌کند و هیچ گیتی قابل دور زدن نیست:
+
+`ScriptDraft` → submit/approve → `ScriptApproved` → `assets/prepare` → `AssetsPreparing` → `assets/ready` → `AssetsReady` → submit/approve → `RightsApproved` → `render` → `Rendering` → `render/complete` → `Rendered` → submit/approve → `PublishApproved`
+
+هر transition یک command صریح در `CreatorRizzWorkflow`، یک متد روی `IProductionRepository` و یک endpoint دارد. زمان‌بندی منبع (`in_milliseconds` و `out_milliseconds`) تا دریافت render manifest نامعلوم می‌ماند و بعد از آن از `TimelineClip` پر می‌شود.
+
+در JSON، وضعیت‌های lifecycle و حقوق فقط با نام خودشان پذیرفته می‌شوند (مثلاً `"Licensed"` و `"PublishApproved"`). ارسال عدد برای این enumها خطای 400 می‌دهد، چون شمارهٔ ناشناخته می‌توانست بی‌سروصدا permissive‌ترین وضعیت حقوق را درخواست کند.
+
+## کنترل همزمانی روی Production
+
+هر درخواست تغییردهنده باید نسخه‌ای را که خوانده اعلام کند، وگرنه دو بازبین روی یک گیت همدیگر را بی‌سروصدا پاک می‌کنند. `GET /productions/{id}` نسخه را در هدر `ETag` برمی‌گرداند و هر `POST` روی یک production موجود به هدر `If-Match` نیاز دارد:
+
+```http
+GET /productions/{id}
+-> ETag: "7"
+
+POST /productions/{id}/reviews/Script
+If-Match: "7"
+```
+
+`POST /productions` استثناست چون production را می‌سازد و هنوز نسخه‌ای ندارد.
+
+- هدر `If-Match` غایب یا نامعتبر: `428 Precondition Required` با راهنمایی برای خواندن production
+- نسخهٔ قدیمی: `409 Conflict` با `currentVersion` تا کلاینت یک‌بار دیگر بخواند و خودش تصمیم بگیرد؛ `retry` کور کار نمی‌کند
+- دو درخواستی که هر دو یک نسخه را خوانده‌اند و هم‌زمان می‌نویسند: `Version` در EF Core concurrency token است و دیتابیس فقط یکی را برنده اعلام می‌کند
+
+`GET /productions/{id}` بعد از هر تغییر نسخهٔ جدید را برمی‌گرداند. endpointهای تغییردهنده نسخهٔ جدید را در پاسخ نمی‌دهند تا هیچ جایی فرض نکند نسخه‌ها دقیقاً یکی زیاد می‌شوند.
+
+Discovery اولیه RSS در `src/CreatorRizz.Infrastructure/Discovery/RssDiscovery.cs` قرار دارد. قبل از اتصال feedهای واقعی، آن‌ها باید در allowlist عملیاتی پروژه ثبت شوند.
 
 در API، `Program.cs` فقط composition root است. قراردادهای HTTP در `Contracts/`، endpointهای هر جریان در `Endpoints/`، middlewareها در `Middleware/` و ترجمهٔ خطاهای موردانتظار در `Results/` نگه‌داری می‌شوند.
 
@@ -50,4 +92,15 @@ Discovery اولیه RSS در `src/CreatorRizz.Infrastructure/RssDiscovery.cs` �
 
 Infrastructure بر اساس نوع adapter دسته‌بندی شده است: `Configuration/`، `DependencyInjection/`، `Persistence/`، `Jobs/`، `Storage/`، `Discovery/`، `Tts/` و `Publishing/`.
 
-در Visual Studio، تمام لایه‌های runtime زیر solution folderِ `src` و پروژهٔ test زیر `tests` نمایش داده می‌شوند.
+در Visual Studio، تمام لایه‌های runtime زیر solution folderِ `src` و پروژه‌های test زیر `tests` نمایش داده می‌شوند.
+
+## تست integration
+
+`CreatorRizz.Persistence.Tests` در هر اجرا یک دیتابیس موقت روی PostgreSQL واقعی می‌سازد، migrationها را روی آن اجرا می‌کند و در پایان آن را حذف می‌کند. یعنی تست هرگز skip نمی‌شود؛ اگر دیتابیس در دسترس نباشد با خطا شکست می‌خورد.
+
+پیش‌فرض به سرویس محلی Docker Compose اشاره می‌کند. برای سرویس دیگر:
+
+```powershell
+$env:CREATORRIZZ_TEST_POSTGRES = "Host=localhost;Port=5432;Database=shorts;Username=shorts;Password=shorts"
+dotnet test CreatorRizz.sln --configuration Release
+```

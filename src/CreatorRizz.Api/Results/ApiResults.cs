@@ -13,6 +13,8 @@ internal static class ApiResults
     {
         try { action(); return HttpResults.NoContent(); }
         catch (KeyNotFoundException) { return HttpResults.NotFound(); }
+        catch (ArgumentException exception) { return HttpResults.BadRequest(new { error = exception.Message }); }
+        catch (ProductionVersionConflict exception) { return VersionConflict(exception); }
         catch (WorkflowRuleViolation exception) { return HttpResults.Conflict(new { error = exception.Message }); }
     }
 
@@ -21,7 +23,15 @@ internal static class ApiResults
         try { return success(action()); }
         catch (KeyNotFoundException) { return HttpResults.NotFound(); }
         catch (ArgumentException exception) { return HttpResults.BadRequest(new { error = exception.Message }); }
+        catch (ProductionVersionConflict exception) { return VersionConflict(exception); }
         catch (WorkflowRuleViolation exception) { return HttpResults.Conflict(new { error = exception.Message }); }
         catch (InvalidOperationException exception) { return HttpResults.Conflict(new { error = exception.Message }); }
     }
+
+    /// <summary>
+    /// A version conflict reports the winning version so the client can re-read once instead of
+    /// guessing or retrying blindly.
+    /// </summary>
+    public static IResult VersionConflict(ProductionVersionConflict exception) =>
+        HttpResults.Conflict(new { error = exception.Message, currentVersion = exception.CurrentVersion });
 }

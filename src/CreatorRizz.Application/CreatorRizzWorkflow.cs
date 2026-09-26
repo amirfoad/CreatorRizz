@@ -22,7 +22,7 @@ public sealed class CreatorRizzWorkflow(
         return productions.Create(candidateId);
     }
 
-    public ScriptVersion DraftScriptFromResearch(Guid productionId)
+    public ScriptVersion DraftScriptFromResearch(Guid productionId, int expectedVersion)
     {
         var production = GetProduction(productionId);
         if (!candidates.TryGet(production.TopicCandidateId, out var candidate) || candidate is null) throw new KeyNotFoundException("Candidate was not found.");
@@ -30,17 +30,21 @@ public sealed class CreatorRizzWorkflow(
             throw new WorkflowRuleViolation("Research pack is required before drafting a script.");
 
         var draft = ScriptDraftComposer.Compose(candidate, researchPack, candidates.GetSources(candidate.Id));
-        return productions.AddScript(productionId, draft.Body, draft.ClaimMapJson);
+        return productions.AddScript(productionId, expectedVersion, draft.Body, draft.ClaimMapJson);
     }
 
     public bool TryGetProduction(Guid productionId, out Production? production) => productions.TryGet(productionId, out production);
     public IReadOnlyCollection<Asset> GetAssets(Guid productionId) => productions.GetAssets(productionId);
     public IReadOnlyCollection<ScriptVersion> GetScripts(Guid productionId) => productions.GetScripts(productionId);
-    public ScriptVersion AddScript(Guid productionId, string body, string claimMapJson) => productions.AddScript(productionId, body, claimMapJson);
+    public ScriptVersion AddScript(Guid productionId, int expectedVersion, string body, string claimMapJson) => productions.AddScript(productionId, expectedVersion, body, claimMapJson);
     public IReadOnlyCollection<AuditEvent> GetAuditEvents(Guid productionId) => productions.GetAuditEvents(productionId);
-    public void AttachAsset(Guid productionId, Asset asset) => productions.AttachAsset(productionId, asset);
-    public void SubmitReview(Guid productionId, ReviewKind kind) => productions.Submit(productionId, kind);
-    public void DecideReview(Guid productionId, ReviewKind kind, ReviewOutcome outcome, string reviewerId, string? notes) => productions.Decide(productionId, kind, outcome, reviewerId, notes);
+    public void AttachAsset(Guid productionId, int expectedVersion, Asset asset, string narrativePurpose) =>
+        productions.AttachAsset(productionId, expectedVersion, asset, AssetUsagePolicy.NormalizePurpose(narrativePurpose));
+    public void BeginAssetPreparation(Guid productionId, int expectedVersion) => productions.BeginAssetPreparation(productionId, expectedVersion);
+    public void DeclareAssetsReady(Guid productionId, int expectedVersion) => productions.DeclareAssetsReady(productionId, expectedVersion);
+    public void CompleteRendering(Guid productionId, int expectedVersion) => productions.CompleteRendering(productionId, expectedVersion);
+    public void SubmitReview(Guid productionId, int expectedVersion, ReviewKind kind) => productions.Submit(productionId, expectedVersion, kind);
+    public void DecideReview(Guid productionId, int expectedVersion, ReviewKind kind, ReviewOutcome outcome, string reviewerId, string? notes) => productions.Decide(productionId, expectedVersion, kind, outcome, reviewerId, notes);
 
     public async ValueTask QueueTextToSpeechAsync(Guid productionId, string? voiceId, decimal speed, CancellationToken cancellationToken)
     {
@@ -52,10 +56,10 @@ public sealed class CreatorRizzWorkflow(
         await jobs.EnqueueTextToSpeechAsync(new TextToSpeechJob(productionId, script.Body, effectiveVoiceId, speed), cancellationToken);
     }
 
-    public async ValueTask QueueRenderAsync(Guid productionId, RenderManifest manifest, CancellationToken cancellationToken)
+    public async ValueTask QueueRenderAsync(Guid productionId, int expectedVersion, RenderManifest manifest, CancellationToken cancellationToken)
     {
         if (manifest.ProductionId != productionId) throw new WorkflowRuleViolation("Render manifest must reference the production being rendered.");
-        productions.BeginRendering(productionId, manifest);
+        productions.BeginRendering(productionId, expectedVersion, manifest);
         await jobs.EnqueueRenderAsync(manifest, cancellationToken);
     }
 

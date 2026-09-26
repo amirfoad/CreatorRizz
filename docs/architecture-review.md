@@ -2,24 +2,56 @@
 
 ## 2026-09-26
 
-### اصلاح‌شده
+### persistence روی PostgreSQL
 
-- ایجاد Production اکنون Candidate موجود را الزامی می‌کند.
-- Research Pack و sourceها باید به همان Candidate متعلق باشند که برای آن script draft ساخته می‌شود.
-- Publish با فهرست خالی asset متوقف می‌شود.
-- title Candidate و reliability score منبع در مرز API اعتبارسنجی می‌شوند.
-- persistence موقت Candidate و Production از API به `Infrastructure/Persistence` منتقل شد؛ API اکنون فقط DTOهای HTTP را به adapter توسعه‌ای نگاشت می‌کند.
-- `Program.cs` به composition root کوچک تبدیل شد؛ endpointهای Candidate و Production و قراردادهای HTTP هر کدام مرز پوشه‌ای روشن دارند.
-- middlewareهای cross-cutting شامل correlation ID و security header در `Api/Middleware` متمرکز شدند.
-- پیکربندی Swagger در `Api/OpenApi` قرار گرفت و فقط در محیط Development فعال است.
-- `Domain/Entities.cs` به مدل‌های تک‌مسئولیتی تقسیم شد؛ caption validation نیز از render manifest جدا شد تا SRT فقط به invariantهای caption وابسته باشد.
-- لایه `CreatorRizz.Application` افزوده شد؛ API دیگر مستقیماً به store یا queue Infrastructure وابسته نیست و workflow را از use case مرکزی دریافت می‌کند.
-- adapterهای Infrastructure از فایل‌های ریشه به پوشه‌های concern-based منتقل شدند؛ composition و options نیز جداگانه نگه‌داری می‌شوند.
-- EF Core/Npgsql و `CreatorRizzDbContext` به Infrastructure افزوده شدند و mapping صریح Candidate، Research، Production، Script، Asset، Review و Audit وجود دارد.
-- mappingها نام ستون PostgreSQL را صریح تعیین می‌کنند تا به convention casing وابسته نباشند.
-- `PostgresCandidateRepository` port مربوط به Candidate/Source/Research را پیاده‌سازی می‌کند؛ تا تکمیل repository Production هنوز adapter پیش‌فرض نیست.
+- `PostgresProductionRepository` نوشته شد و `PostgresCandidateRepository` به DI متصل شد؛ هر دو به‌عنوان scoped ثبت می‌شوند چون `DbContext` scoped است.
+- `InMemoryCandidateStore` و `InMemoryProductionStore` حذف شدند. دیگر مصرفی نداشتند و دو مسیر persistence برای یک invariant، یعنی گیت‌های بازبینی، وجود می‌آوردند.
+- EF Core تنها مالک schema شد. `db/init/001_schema.sql` حذف و `InitialSchema` migration ساخته شد. دو منبع schema تضمیناً با هم drift می‌کردند.
+- API پیش از پذیرش ترافیک migrationها را اجرا می‌کند و در صورت شکست startup متوقف می‌شود، چون ادامهٔ کار با schema ناشناخته یعنی خطاهای مبهم در زمان اجرا.
+- `CreatorRizzDesignTimeDbContextFactory` اضافه شد تا `dotnet ef` بدون اجرای API کار کند.
+- `OnModelCreating` از حالت تک‌خطی خارج شد. نگاشت‌ها باید قابل بازبینی باشند و قیدهای اضافه‌شده در همین متد قرار می‌گیرند.
+- قیدهای `foreign key` که در SQL دستی وجود داشتند اما در مدل EF نبودند به مدل اضافه شدند، به‌علاوهٔ `CHECK` برای `reliability_score` و ایندکس یکتای `checksum`.
+- `productions`، `script_versions` و `review_decisions` `ON DELETE RESTRICT` گرفتند تا append-only بودن تاریخچه به یک accident وابسته نباشد.
+- `asset_usages` در `DbContext` نگاشت شد؛ قبلاً جدول در schema وجود داشت اما در مدل EF نبود، پس `GetAssets` هیچ پیوندی به production نمی‌داشت.
+- ترجمهٔ خطای provider در `DbContextSaveExtensions` متمرکز شد تا repositoryها exception خام Npgsql را به API leak نکنند.
+- `asset_usages.narrative_purpose` به پورت `AttachAsset` و قرارداد HTTP اضافه شد. قبلاً این ستون `NOT NULL` بود ولی هیچ مسیری آن را پر نمی‌کرد.
+- `in_milliseconds` و `out_milliseconds` nullable شدند، چون زمان‌بندی منبع تا دریافت render manifest معلوم نیست. `BeginRendering` آن‌ها را از `TimelineClip` پر می‌کند و `AssetUsagePolicy` همان قاعده را در دامنه نگه می‌دارد.
+- `AssetUsagePolicy` به‌عنوان مالک قاعدهٔ purpose و ترتیب زمان‌بندی اضافه شد.
+
+### نقص‌هایی که persistence آشکار کرد
+
+- **گیت حقوق و publish غیرقابل دستیابی بودند.** `ScriptApproved` هیچ transitionی به `AssetsPreparing` نداشت، `AssetsPreparing` به `AssetsReady` برنمی‌گشت و `Rendering` به `Rendered` نمی‌رسید. یعنی `PublishApproved` که invariant اصلی رویش نوشته شده بود، در عمل غیرقابل تولید بود. سه transition با command و endpoint صریح اضافه شد.
+- **`payload_json` از نوع jsonb بود ولی payload یک رشتهٔ سادهٔ غیر-JSON بود.** تست integration این را به‌صورت خطای PostgreSQL نشان داد. payload حالا با `JsonSerializer` کدگذاری می‌شود.
+- **`facts_json` و `uncertainty_json` ورودی نامعتبر را به خطای PostgreSQL می‌سپردند.** حالا با پیام قابل فهم در مرز repository رد می‌شوند.
+- **`canonicalUrl` نال باعث 500 می‌شد** چون `.Trim()` روی نال اجرا می‌شد. حالا ورودی خالی با 400 رد می‌شود.
+- **enumها روی JSON عددی سفر می‌کردند.** کلاینتی که شماره‌ها را نمی‌شناخت می‌توانست `0` بفرستد و بی‌سروصدا `RightsStatus.Owned`، یعنی permissive‌ترین وضعیت، بگیرد. حالا فقط نام پذیرفته می‌شود.
+- **connection string پیش‌فرض API با رمز compose هم‌خوان نبود**، پس مسیر مستند `docker compose up -d` هرگز وصل نمی‌شد.
+
+### optimistic concurrency
+
+- **دو بازبین می‌توانستند همدیگر را overwrite کنند.** `Production.Version` وجود داشت و در هر mutation یکی اضافه می‌شد، ولی هیچ‌جا از آن استفاده نمی‌شد؛ `Submit` و `Decide` وضعیت فعلی را از دیتابیس می‌خواندند و هرچه در دیتابیس بوده بود بازنویسی می‌کردند. یعنی تصمیم دوم بازبین، تصمیم اول را بی‌صدا پاک می‌کرد و audit trail دو تصمیم متضاد را نشان می‌داد.
+- هر متد mutation در `IProductionRepository` حالا `expectedVersion` می‌گیرد. این عمداً همهٔ متدها را شامل می‌شود، نه فقط `Decide`: اگر فقط تصمیم بازبینی محافظت شود، همان باگ در `AttachAsset` و `BeginRendering` باقی می‌ماند و آن‌ها هم با TOCTOU روی state تصمیم می‌گیرند.
+- `Production.EnsureVersion` تنها مالک این قاعده است و `ProductionVersionConflict` می‌سازد.
+- `ProductionVersionConflict` عمداً از `WorkflowRuleViolation` ارث نمی‌برد. transition ممکن است بعد از خواندن نسخهٔ درست کاملاً مجاز باشد، پس پیامش «دوباره بخوان و خودت تصمیم بگیر» است، نه «این کار هرگز ممکن نیست».
+- `Version` در EF Core concurrency token شد. guard دامنه کلاینت ازپس‌مانده را می‌گیرد، ولی حالتی که دو درخواست هر دو نسخهٔ یکسان را خوانده‌اند و سپس می‌نویسند را فقط دیتابیس می‌تواند داوری کند. هر دو مسیر تست جدا دارند.
+- `DbUpdateConcurrencyException` زیرکلاس `DbUpdateException` است، پس catch عمومی آن را «PostgreSQL نتوانست تغییر را ذخیره کند» برچسب می‌زد. یک catch صریح آن را عبور می‌دهد تا repository بتواند نسخهٔ برنده را بخواند و گزارش دهد.
+- الزام `If-Match` در middleware نگه‌داری می‌شود، نه در تک‌تک endpointها. با ۹ endpoint تغییردهنده، تکرار یک بررسی در هر کدام یعنی یکی از آنها فراموش می‌شود و باگ برمی‌گردد. دامنه هم جداگانه `expectedVersion` را اجباری می‌کند، پس فراموشی در یک لایه به باگ در لایهٔ دیگر تبدیل نمی‌شود.
+- endpointهای تغییردهنده نسخهٔ جدید را در پاسخ نمی‌دهند. حساب `expectedVersion + 1` در middleware یعنی فرض پنهانی دربارهٔ اینکه هر mutation دقیقاً یکی زیاد می‌کند؛ این فرض در لایهٔ اشتباه و برای خواننده نامرئی است. کلاینت از `GET` نسخهٔ واقعی را می‌خواند.
+
+### زیرساخت و تست
+
+- `CreatorRizz.Persistence.Tests` اضافه شد. هر اجرا یک دیتابیس موقت می‌سازد، migrationها را روی سرور واقعی اجرا می‌کند و دیتابیس را حذف می‌کند. تست عمداً skip نمی‌شود.
+- نام solution در `ci.yml` اشتباه بود (`ShortsAutomation.sln`) و آن workflow با هیچ تغییری شکست می‌خورد. اصلاح شد و سرویس PostgreSQL به آن اضافه شد.
+- `package-lock.json` وجود نداشت، پس `npm ci` در CI کار نمی‌کرد. lockfile ساخته شد و `@types/react` و `@types/react-dom` که جا افتاده بودند اضافه شدند.
+- `vite-env.d.ts` اضافه شد تا import فایل CSS در typecheck معتبر باشد.
+
+### تصمیم‌هایی که باید ثبت شوند
+
+- schema یک مالک دارد: EF Core migration. SQL دستی به‌عنوان منبع دوم حذف شد.
+- `AttachAsset` علاوه بر `Asset` یک `narrativePurpose` می‌گیرد. این یک تصمیم معماری بود و در README و اسناد plan ثبت شده است.
+- هر transition حالت، یک command صریح دارد. هیچ گیتی با فراخوانی مستقیم repository دور زده نمی‌شود.
 
 ### کار باقی‌مانده
 
-- storage موقت همچنان in-memory و فقط مناسب توسعه محلی است؛ در مرحله persistence باید با PostgreSQL جایگزین شود.
-- صف in-memory فقط برای توسعه محلی مناسب است و در deployment باید پایدار شود.
+- صف job همچنان in-memory است و در deployment باید پایدار شود.
+- `PostgresCandidateRepository.TryGet` از `Find` استفاده می‌کند که change tracker را درگیر می‌کند. برای خواندن‌های صرفاً query باید `AsNoTracking` جایگزین شود. در `PostgresProductionRepository` این کار عمداً انجام نشد: داشتن entity ردیابی‌شده همان چیزی است که نسخهٔ اصلی را برای نوشتن نگه می‌دارد.

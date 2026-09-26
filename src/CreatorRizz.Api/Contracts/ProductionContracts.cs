@@ -10,6 +10,7 @@ public sealed record AttachAssetRequest(
     string Type,
     string? SourceUrl,
     RightsStatus RightsStatus,
+    string NarrativePurpose,
     string? LicenseEvidence,
     string? Checksum);
 public sealed record ProductionResponse(Guid Id, ProductionState State, int Version);

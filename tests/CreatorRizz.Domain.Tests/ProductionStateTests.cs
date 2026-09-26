@@ -174,6 +174,54 @@ public sealed class ProductionStateTests
     }
 
     [Fact]
+    public void AssetPreparationOnlyStartsAfterScriptApproval()
+    {
+        Assert.Equal(ProductionState.AssetsPreparing, ProductionWorkflow.BeginAssetPreparation(ProductionState.ScriptApproved));
+        Assert.Throws<WorkflowRuleViolation>(() => ProductionWorkflow.BeginAssetPreparation(ProductionState.ScriptDraft));
+    }
+
+    [Fact]
+    public void AssetsMustBePreparedBeforeTheRightsGateOpens()
+    {
+        Assert.Equal(ProductionState.AssetsReady, ProductionWorkflow.DeclareAssetsReady(ProductionState.AssetsPreparing));
+        Assert.Throws<WorkflowRuleViolation>(() => ProductionWorkflow.DeclareAssetsReady(ProductionState.ScriptApproved));
+    }
+
+    [Fact]
+    public void RenderCompletionRequiresARenderInProgress()
+    {
+        Assert.Equal(ProductionState.Rendered, ProductionWorkflow.CompleteRendering(ProductionState.Rendering));
+        Assert.Throws<WorkflowRuleViolation>(() => ProductionWorkflow.CompleteRendering(ProductionState.RightsApproved));
+    }
+
+    [Fact]
+    public void AssetUsageRejectsABlankNarrativePurpose()
+    {
+        Assert.Throws<ArgumentException>(() => AssetUsagePolicy.NormalizePurpose("  "));
+        Assert.Equal("evidence", AssetUsagePolicy.NormalizePurpose("  evidence  "));
+    }
+
+    [Fact]
+    public void AssetUsageTimingIsOnlyCheckedWhenBothBoundsAreKnown()
+    {
+        AssetUsagePolicy.EnsureTimingIsOrdered(null, null);
+        AssetUsagePolicy.EnsureTimingIsOrdered(400, 3200);
+        Assert.Throws<WorkflowRuleViolation>(() => AssetUsagePolicy.EnsureTimingIsOrdered(3200, 400));
+        Assert.Throws<WorkflowRuleViolation>(() => AssetUsagePolicy.EnsureTimingIsOrdered(-1, 400));
+    }
+
+    [Fact]
+    public void AProductionAcceptsChangesOnlyForTheVersionThatWasRead()
+    {
+        var production = new Production { Version = 7 };
+        production.EnsureVersion(7);
+
+        var conflict = Assert.Throws<ProductionVersionConflict>(() => production.EnsureVersion(6));
+        Assert.Equal(6, conflict.ExpectedVersion);
+        Assert.Equal(7, conflict.CurrentVersion);
+    }
+
+    [Fact]
     public void RssParserReturnsOnlyItemsWithValidLinks()
     {
         const string xml = """

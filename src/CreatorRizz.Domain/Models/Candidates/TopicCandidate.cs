@@ -7,6 +7,7 @@ public sealed class TopicCandidate
     public required string Title { get; init; }
     public string? Creator { get; init; }
     public DateTimeOffset PublishedAt { get; init; }
+    public DateTimeOffset CreatedAt { get; init; } = DateTimeOffset.UtcNow;
     public decimal ViralScore { get; set; }
     public ProductionState State { get; set; } = ProductionState.Discovered;
 }

@@ -35,6 +35,18 @@ public static class ProductionWorkflow
         _ => state
     };
 
+    public static ProductionState BeginAssetPreparation(ProductionState state) => state == ProductionState.ScriptApproved
+        ? ProductionState.AssetsPreparing
+        : throw new WorkflowRuleViolation("Script approval is required before preparing assets.");
+
+    public static ProductionState DeclareAssetsReady(ProductionState state) => state == ProductionState.AssetsPreparing
+        ? ProductionState.AssetsReady
+        : throw new WorkflowRuleViolation("Assets must be prepared before the rights review can start.");
+
+    public static ProductionState CompleteRendering(ProductionState state) => state == ProductionState.Rendering
+        ? ProductionState.Rendered
+        : throw new WorkflowRuleViolation("Rendering must be in progress before the render can complete.");
+
     public static ProductionState BeginRendering(ProductionState state) => state == ProductionState.RightsApproved
         ? ProductionState.Rendering
         : throw new WorkflowRuleViolation("Rights approval is required before rendering.");

@@ -23,11 +23,9 @@ public static class ServiceCollectionExtensions
             .ValidateOnStart();
         services.AddDbContext<CreatorRizzDbContext>(options =>
             options.UseNpgsql(configuration.GetSection(ExternalServicesOptions.SectionName).Get<ExternalServicesOptions>()!.DatabaseConnectionString));
+        services.AddScoped<ICandidateRepository, PostgresCandidateRepository>();
+        services.AddScoped<IProductionRepository, PostgresProductionRepository>();
         services.AddSingleton<IBackgroundJobQueue, InMemoryBackgroundJobQueue>();
-        services.AddSingleton<InMemoryCandidateStore>();
-        services.AddSingleton<InMemoryProductionStore>();
-        services.AddSingleton<ICandidateRepository>(provider => provider.GetRequiredService<InMemoryCandidateStore>());
-        services.AddSingleton<IProductionRepository>(provider => provider.GetRequiredService<InMemoryProductionStore>());
         services.AddSingleton<IProductionJobQueue, InMemoryProductionJobQueue>();
         return services;
     }

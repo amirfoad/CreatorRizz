@@ -4,15 +4,31 @@ on:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: shorts
+          POSTGRES_PASSWORD: shorts
+          POSTGRES_DB: shorts
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U shorts -d shorts"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      CREATORRIZZ_TEST_POSTGRES: Host=localhost;Port=5432;Database=shorts;Username=shorts;Password=shorts
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v5
         with: { dotnet-version: '10.0.x' }
       - uses: actions/setup-node@v4
         with: { node-version: '24' }
-      - run: dotnet restore ShortsAutomation.sln
-      - run: dotnet build ShortsAutomation.sln --no-restore --configuration Release
-      - run: dotnet test ShortsAutomation.sln --no-build --configuration Release
+      - run: dotnet restore CreatorRizz.sln
+      - run: dotnet build CreatorRizz.sln --no-restore --configuration Release
+      - run: dotnet test CreatorRizz.sln --no-build --configuration Release
       - run: npm ci
         working-directory: web
       - run: npm run typecheck && npm run build

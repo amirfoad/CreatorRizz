@@ -22,7 +22,16 @@
 - [x] ایجاد CreatorRizz.Application با use caseهای CreatorRizz و portهای persistence/job queue
 - [x] تفکیک CreatorRizz.Infrastructure بر اساس adapterهای configuration، persistence، jobs، storage، discovery، TTS و publishing
 - [x] مرتب‌سازی solution folderهای Visual Studio: لایه‌ها زیر src و تست‌ها زیر tests
-- [~] اتصال EF Core و Npgsql به PostgreSQL — DbContext و schema آماده است؛ repositoryهای workflow هنوز in-memory هستند
+- [x] persistence کامل روی PostgreSQL: `PostgresCandidateRepository` و `PostgresProductionRepository` به‌عنوان تنها adapterها
+- [x] EF Core به‌عنوان تنها مالک schema با migration اولیه و حذف SQL دستی
+- [x] اجرای migration در startup پیش از پذیرش ترافیک
+- [x] asset usage با narrative purpose و زمان‌بندی که از render manifest پر می‌شود
+- [x] transitionهای مفقود state machine: `ScriptApproved → AssetsPreparing → AssetsReady` و `Rendering → Rendered`
+- [x] تست integration روی PostgreSQL واقعی با دیتابیس موقت در هر اجرا
+- [x] enumهای JSON به‌صورت نام؛ عدد دیگر پذیرفته نمی‌شود
+- [x] optimistic concurrency با `If-Match`/`ETag` و concurrency token در EF Core
+- [x] lockfile و typeهای React برای عبور `npm ci` و `npm run typecheck`
+- [x] اصلاح نام solution در CI و افزودن سرویس PostgreSQL به آن
 - [ ] provider واقعی AI، TTS و FFmpeg
 - [ ] React operations dashboard
 - [ ] OAuth و upload private به YouTube
