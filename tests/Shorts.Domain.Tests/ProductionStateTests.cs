@@ -140,4 +140,12 @@ public sealed class ProductionStateTests
         Assert.Equal("research", job.Type);
         Assert.Equal("{\"candidateId\":\"abc\"}", job.PayloadJson);
     }
+
+    [Fact]
+    public async Task DisabledTtsProviderRejectsInvalidSpeedBeforeAnyExternalCall()
+    {
+        ITextToSpeechProvider provider = new DisabledTextToSpeechProvider();
+        var request = new TextToSpeechRequest(Guid.NewGuid(), "Narration", "voice", 3m);
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => provider.SynthesizeAsync(request, CancellationToken.None));
+    }
 }
