@@ -2,7 +2,7 @@ using System.Text.Json;
 using CreatorRizz.Application.Abstractions;
 using CreatorRizz.Domain;
 
-namespace CreatorRizz.Infrastructure.BackgroundJobs;
+namespace CreatorRizz.Infrastructure.Jobs;
 
 public sealed class InMemoryProductionJobQueue(IBackgroundJobQueue queue) : IProductionJobQueue
 {

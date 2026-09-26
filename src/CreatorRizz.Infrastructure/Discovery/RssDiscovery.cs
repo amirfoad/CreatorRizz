@@ -1,6 +1,6 @@
 using System.Xml.Linq;
 
-namespace CreatorRizz.Infrastructure;
+namespace CreatorRizz.Infrastructure.Discovery;
 
 public sealed record DiscoveredTopic(string Title, string CanonicalUrl, DateTimeOffset PublishedAt, string Publisher);
 

@@ -1,6 +1,6 @@
 using CreatorRizz.Domain;
 
-namespace CreatorRizz.Infrastructure;
+namespace CreatorRizz.Infrastructure.Publishing;
 
 public sealed record YouTubeUploadRequest(Guid ProductionId, string VideoObjectKey, string Title, string Description, DateTimeOffset? ScheduledAt);
 public sealed record YouTubeUploadResult(string VideoId, string PrivacyStatus);

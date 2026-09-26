@@ -1,4 +1,5 @@
 using CreatorRizz.Infrastructure;
+using CreatorRizz.Infrastructure.DependencyInjection;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Services.AddCreatorRizzInfrastructure(builder.Configuration);

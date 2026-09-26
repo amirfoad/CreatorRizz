@@ -1,18 +1,11 @@
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using CreatorRizz.Infrastructure.Persistence;
-using CreatorRizz.Infrastructure.BackgroundJobs;
+using CreatorRizz.Infrastructure.Jobs;
+using CreatorRizz.Infrastructure.Configuration;
 using CreatorRizz.Application.Abstractions;
 
-namespace CreatorRizz.Infrastructure;
-
-public sealed class ExternalServicesOptions
-{
-    public const string SectionName = "ExternalServices";
-    public required string DatabaseConnectionString { get; init; }
-    public required string RedisConnectionString { get; init; }
-    public required string ObjectStorageEndpoint { get; init; }
-}
+namespace CreatorRizz.Infrastructure.DependencyInjection;
 
 public static class ServiceCollectionExtensions
 {

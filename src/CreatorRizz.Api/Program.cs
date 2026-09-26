@@ -4,6 +4,7 @@ using CreatorRizz.Api.Middleware;
 using CreatorRizz.Api.OpenApi;
 using CreatorRizz.Application;
 using CreatorRizz.Infrastructure;
+using CreatorRizz.Infrastructure.DependencyInjection;
 using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);

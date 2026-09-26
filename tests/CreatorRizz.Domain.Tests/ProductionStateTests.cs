@@ -1,5 +1,9 @@
 using CreatorRizz.Domain;
 using CreatorRizz.Infrastructure;
+using CreatorRizz.Infrastructure.Discovery;
+using CreatorRizz.Infrastructure.Jobs;
+using CreatorRizz.Infrastructure.Storage;
+using CreatorRizz.Infrastructure.Tts;
 using Xunit;
 
 namespace CreatorRizz.Domain.Tests;

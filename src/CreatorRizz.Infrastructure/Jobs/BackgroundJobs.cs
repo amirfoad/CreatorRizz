@@ -1,6 +1,6 @@
 using System.Threading.Channels;
 
-namespace CreatorRizz.Infrastructure;
+namespace CreatorRizz.Infrastructure.Jobs;
 
 public sealed record BackgroundJob(Guid Id, string Type, string PayloadJson, DateTimeOffset EnqueuedAt);
 

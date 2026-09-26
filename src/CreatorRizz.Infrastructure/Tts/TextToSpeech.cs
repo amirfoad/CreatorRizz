@@ -1,4 +1,4 @@
-namespace CreatorRizz.Infrastructure;
+namespace CreatorRizz.Infrastructure.Tts;
 
 public static class TextToSpeechDefaults
 {

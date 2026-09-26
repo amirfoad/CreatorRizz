@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.Extensions.Options;
 using CreatorRizz.Infrastructure;
+using CreatorRizz.Infrastructure.Configuration;
 
 namespace CreatorRizz.Api;
 
