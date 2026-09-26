@@ -38,6 +38,8 @@ API در development با `dotnet run --project src/CreatorRizz.Api` اجرا م
 
 PostgreSQL schema در `db/init/001_schema.sql` قرار دارد و هنگام ساخت volume تازه توسط Docker Compose اجرا می‌شود.
 
+`CreatorRizzDbContext` در `src/CreatorRizz.Infrastructure/Persistence` مدل‌های اصلی را به PostgreSQL نگاشت می‌کند. در وضعیت فعلی repositoryهای workflow هنوز adapterهای in-memory هستند؛ جایگزینی آن‌ها با repositoryهای EF Core مرحلهٔ بعدی است.
+
 Discovery اولیه RSS در `src/CreatorRizz.Infrastructure/RssDiscovery.cs` قرار دارد. قبل از اتصال feedهای واقعی، آن‌ها باید در allowlist عملیاتی پروژه ثبت شوند.
 
 تا زمان اتصال PostgreSQL، داده‌های Candidate و Production در `InMemoryCandidateStore` و `InMemoryProductionStore` نگه‌داری می‌شوند؛ با توقف API حذف خواهند شد. این adapterها عمداً خارج از لایه API و زیر `src/CreatorRizz.Infrastructure/Persistence` قرار دارند.

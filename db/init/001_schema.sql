@@ -19,6 +19,15 @@ CREATE TABLE IF NOT EXISTS source_items (
   captured_at TIMESTAMPTZ NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS research_packs (
+  id UUID PRIMARY KEY,
+  topic_candidate_id UUID NOT NULL UNIQUE REFERENCES topic_candidates(id),
+  summary TEXT NOT NULL,
+  facts_json JSONB NOT NULL,
+  uncertainty_json JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS productions (
   id UUID PRIMARY KEY,
   topic_candidate_id UUID NOT NULL REFERENCES topic_candidates(id),
