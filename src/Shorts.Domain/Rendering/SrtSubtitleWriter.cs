@@ -6,7 +6,7 @@ public static class SrtSubtitleWriter
 {
     public static string Write(IReadOnlyCollection<CaptionCue> captions)
     {
-        RenderManifestValidator.Validate(new RenderManifest(Guid.Empty, 1080, 1920, [new TimelineClip(Guid.Empty, 0, 1, 0)], captions, "voice"));
+        CaptionCueValidator.EnsureValid(captions);
         var builder = new StringBuilder();
         foreach (var (caption, index) in captions.OrderBy(caption => caption.StartMilliseconds).Select((caption, index) => (caption, index + 1)))
         {

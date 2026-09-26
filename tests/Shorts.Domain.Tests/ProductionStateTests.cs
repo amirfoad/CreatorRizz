@@ -103,6 +103,12 @@ public sealed class ProductionStateTests
     }
 
     [Fact]
+    public void SubtitleWriterRejectsInvalidCaptionWithoutNeedingARenderManifest()
+    {
+        Assert.Throws<WorkflowRuleViolation>(() => SrtSubtitleWriter.Write([new CaptionCue(1000, 1000, "Invalid timing")]));
+    }
+
+    [Fact]
     public void PublishingRequiresFinalHumanApprovalAndApprovedAssets()
     {
         Assert.Throws<WorkflowRuleViolation>(() => PublishingPolicy.EnsureCanUpload(ProductionState.Rendered, [RightsStatus.Licensed]));

@@ -12,10 +12,12 @@ CreatorRizz ابزار داخلی برای کشف سوژه، تولید روای
 
 نتیجه بازبینی معماری در [Architecture Review](docs/architecture-review.md) ثبت می‌شود.
 
+راهنمای ساختار و مسئولیت‌های لایه Domain در [Domain Design](docs/domain-design.md) قرار دارد.
+
 ## ساختار
 
 - `src/Shorts.Api`: HTTP API، validation مرز HTTP و health endpoint
-- `src/Shorts.Domain`: مدل و ruleهای دامنه
+- `src/Shorts.Domain`: مدل و ruleهای دامنه؛ شامل `Models/`، `Policies/`، `Workflow/`، `Rendering/`، `Captions/`، `Scoring/` و `Scripting/`
 - `src/Shorts.Infrastructure`: configuration، adapterهای بیرونی و persistence توسعه‌ای (`Persistence/`)
 - `src/Shorts.Workers`: workerهای پس زمینه
 - `web`: React operations dashboard

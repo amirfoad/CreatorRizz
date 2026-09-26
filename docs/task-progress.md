@@ -18,6 +18,7 @@
 - [x] تفکیک Program.cs به composition root، Contracts، Endpoints و Results در لایه API
 - [x] انتقال correlation و security middlewareهای API به پوشه Middleware
 - [x] Swagger/OpenAPI توسعه‌ای برای endpointهای API
+- [x] تفکیک لایه Domain به مدل‌ها، policyها، workflow، rendering، captions، scoring و scripting
 - [ ] اتصال EF Core و Npgsql به PostgreSQL
 - [ ] provider واقعی AI، TTS و FFmpeg
 - [ ] React operations dashboard

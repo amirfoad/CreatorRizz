@@ -12,6 +12,7 @@
 - `Program.cs` به composition root کوچک تبدیل شد؛ endpointهای Candidate و Production و قراردادهای HTTP هر کدام مرز پوشه‌ای روشن دارند.
 - middlewareهای cross-cutting شامل correlation ID و security header در `Api/Middleware` متمرکز شدند.
 - پیکربندی Swagger در `Api/OpenApi` قرار گرفت و فقط در محیط Development فعال است.
+- `Domain/Entities.cs` به مدل‌های تک‌مسئولیتی تقسیم شد؛ caption validation نیز از render manifest جدا شد تا SRT فقط به invariantهای caption وابسته باشد.
 
 ### کار باقی‌مانده
 
