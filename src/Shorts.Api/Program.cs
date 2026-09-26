@@ -6,7 +6,7 @@ using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddShortsInfrastructure(builder.Configuration);
-builder.Services.AddHealthChecks();
+builder.Services.AddHealthChecks().AddCheck<ConfigurationHealthCheck>("configuration", tags: ["ready"]);
 builder.Services.AddSingleton<ProductionStore>();
 builder.Services.AddSingleton<CandidateStore>();
 builder.Services.AddRateLimiter(options => options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(_ =>
@@ -22,7 +22,8 @@ var app = builder.Build();
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<SecurityHeadersMiddleware>();
 app.UseRateLimiter();
-app.MapHealthChecks("/health");
+app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions { Predicate = _ => false });
+app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
 app.MapGet("/candidates", (CandidateStore store) => Results.Ok(store.List()));
 app.MapPost("/candidates", (CreateCandidateRequest request, CandidateStore store) =>
     ExecuteWithResult(() => store.Add(request), candidate => Results.Created($"/candidates/{candidate.Id}", candidate)));

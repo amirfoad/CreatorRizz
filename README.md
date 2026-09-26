@@ -19,6 +19,6 @@ CreatorRizz ابزار داخلی برای کشف سوژه، تولید روای
 5. `dotnet test ShortsAutomation.sln --configuration Release`
 6. از پوشه `web`: `npm ci`، سپس `npm run typecheck` و `npm run build`
 
-API در development با `dotnet run --project src/Shorts.Api` اجرا می‌شود و health check آن `GET /health` است.
+API در development با `dotnet run --project src/Shorts.Api` اجرا می‌شود. `GET /health/live` زنده‌بودن پردازش و `GET /health/ready` آمادگی تنظیمات لازم را نشان می‌دهد.
 
 PostgreSQL schema در `db/init/001_schema.sql` قرار دارد و هنگام ساخت volume تازه توسط Docker Compose اجرا می‌شود.
