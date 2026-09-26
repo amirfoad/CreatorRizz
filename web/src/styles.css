@@ -1,3 +1,21 @@
-:root { font-family: Arial, sans-serif; color: #16324f; background: #f4f6f7; }
+:root {
+  --rizz-purple: #7c3aed;
+  --rizz-magenta: #ec4899;
+  --rizz-blue: #3b82f6;
+  --rizz-orange: #f97316;
+  --rizz-navy: #0f172a;
+  --rizz-text: #ffffff;
+  --rizz-muted: #94a3b8;
+  font-family: Arial, sans-serif;
+  color: var(--rizz-text);
+  background: var(--rizz-navy);
+}
 body { margin: 0; }
-main { max-width: 960px; margin: 4rem auto; padding: 2rem; background: white; border-radius: 12px; }
+.app-shell { min-height: 100vh; }
+.brand-bar { display: flex; align-items: center; gap: 1rem; padding: .75rem 1.5rem; border-bottom: 1px solid #293449; background: #121b2d; }
+.brand-logo { width: 112px; height: 58px; object-fit: contain; object-position: center; }
+h1 { margin: 0; font-size: 1.05rem; letter-spacing: .02em; }
+.brand-bar p { margin: .2rem 0 0; color: var(--rizz-muted); font-size: .8rem; }
+.workspace { max-width: 960px; margin: 3rem auto; padding: 0 1.5rem; }
+.workspace h2 { margin-bottom: .4rem; }
+.workspace p { color: var(--rizz-muted); }

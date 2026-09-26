@@ -2,6 +2,10 @@
 
 CreatorRizz ابزار داخلی برای کشف سوژه، تولید روایت، بازبینی حقوق، رندر و انتشار کنترل‌شده YouTube Shorts است.
 
+لوگوی برنامه در `web/public/branding/creatorrizz-logo.png` قرار دارد و رابط وب از همان فایل استفاده می‌کند.
+
+پالت رنگ و راهنمای استفاده در [Brand System](docs/brand/README.md) و فایل PDF مرجع آن قرار دارد.
+
 ## ساختار
 
 - `src/Shorts.Api`: HTTP API و health endpoint
