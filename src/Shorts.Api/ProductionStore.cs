@@ -86,6 +86,22 @@ public sealed class ProductionStore
             return script;
         }
     }
+
+    public void BeginRendering(Guid id, RenderManifest manifest)
+    {
+        var production = GetRequired(id);
+        if (manifest.ProductionId != id) throw new WorkflowRuleViolation("Render manifest must reference the production being rendered.");
+        RenderManifestValidator.Validate(manifest);
+        lock (production)
+        {
+            var assets = GetAssets(id);
+            if (assets.Count == 0) throw new WorkflowRuleViolation("At least one approved asset is required before rendering.");
+            AssetRightsPolicy.EnsureCanRender(assets.Select(asset => asset.RightsStatus), hasExplicitRightsApproval: true);
+            production.State = ProductionWorkflow.BeginRendering(production.State);
+            production.Version++;
+            AddAudit("system", "RenderQueued", "Production", id.ToString());
+        }
+    }
     public IReadOnlyCollection<AuditEvent> GetAuditEvents(Guid productionId) => _auditEvents.Where(x => x.EntityId == productionId.ToString()).ToArray();
 
     private void AddAudit(string actor, string action, string entityType, string entityId, string? payload = null) =>

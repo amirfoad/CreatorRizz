@@ -34,4 +34,8 @@ public static class ProductionWorkflow
         ProductionState.RightsApproved or ProductionState.Rendering or ProductionState.Rendered or ProductionState.PublishReview or ProductionState.PublishApproved => ProductionState.AssetsReady,
         _ => state
     };
+
+    public static ProductionState BeginRendering(ProductionState state) => state == ProductionState.RightsApproved
+        ? ProductionState.Rendering
+        : throw new WorkflowRuleViolation("Rights approval is required before rendering.");
 }

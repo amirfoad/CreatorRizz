@@ -155,4 +155,11 @@ public sealed class ProductionStateTests
         var request = new TextToSpeechRequest(Guid.NewGuid(), "Narration", null, 1m);
         Assert.Equal("alloy", request.EffectiveVoiceId);
     }
+
+    [Fact]
+    public void RenderingRequiresRightsApproval()
+    {
+        Assert.Throws<WorkflowRuleViolation>(() => ProductionWorkflow.BeginRendering(ProductionState.AssetsReady));
+        Assert.Equal(ProductionState.Rendering, ProductionWorkflow.BeginRendering(ProductionState.RightsApproved));
+    }
 }

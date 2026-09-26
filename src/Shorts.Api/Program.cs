@@ -59,6 +59,17 @@ app.MapPost("/productions/{id:guid}/tts", async (Guid id, QueueTtsRequest reques
     await queue.EnqueueAsync("tts", JsonSerializer.Serialize(new { payload.ProductionId, payload.Text, voiceId = payload.EffectiveVoiceId, payload.Speed }), cancellationToken);
     return Results.Accepted($"/productions/{id}", new { voiceId = payload.EffectiveVoiceId, status = "queued" });
 });
+app.MapPost("/productions/{id:guid}/render", async (Guid id, RenderManifest manifest, ProductionStore store, IBackgroundJobQueue queue, CancellationToken cancellationToken) =>
+{
+    try
+    {
+        store.BeginRendering(id, manifest);
+        await queue.EnqueueAsync("render", JsonSerializer.Serialize(manifest), cancellationToken);
+        return Results.Accepted($"/productions/{id}", new { status = "queued" });
+    }
+    catch (KeyNotFoundException) { return Results.NotFound(); }
+    catch (WorkflowRuleViolation exception) { return Results.Conflict(new { error = exception.Message }); }
+});
 app.MapGet("/productions/{id:guid}/audit-events", (Guid id, ProductionStore store) =>
     store.TryGet(id, out _) ? Results.Ok(store.GetAuditEvents(id)) : Results.NotFound());
 app.MapPost("/productions/{id:guid}/assets", (Guid id, AttachAssetRequest request, ProductionStore store) =>
