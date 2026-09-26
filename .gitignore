@@ -1,0 +1,13 @@
+bin/
+obj/
+node_modules/
+dist/
+.env
+.env.*
+!.env.example
+media/
+renders/
+storage/
+outputs/
+work/
+*.user

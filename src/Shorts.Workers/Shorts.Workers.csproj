@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+  <ItemGroup>
+    <ProjectReference Include="..\Shorts.Domain\Shorts.Domain.csproj" />
+    <ProjectReference Include="..\Shorts.Infrastructure\Shorts.Infrastructure.csproj" />
+  </ItemGroup>
+</Project>
