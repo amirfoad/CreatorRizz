@@ -148,4 +148,11 @@ public sealed class ProductionStateTests
         var request = new TextToSpeechRequest(Guid.NewGuid(), "Narration", "voice", 3m);
         await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => provider.SynthesizeAsync(request, CancellationToken.None));
     }
+
+    [Fact]
+    public void TtsUsesAlloyWhenNoVoiceIsRequested()
+    {
+        var request = new TextToSpeechRequest(Guid.NewGuid(), "Narration", null, 1m);
+        Assert.Equal("alloy", request.EffectiveVoiceId);
+    }
 }
