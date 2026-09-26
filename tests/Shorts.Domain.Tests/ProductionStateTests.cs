@@ -100,4 +100,12 @@ public sealed class ProductionStateTests
         Assert.Contains("00:00:01,500 --> 00:00:03,250", result);
         Assert.Contains("Verified context", result);
     }
+
+    [Fact]
+    public void PublishingRequiresFinalHumanApprovalAndApprovedAssets()
+    {
+        Assert.Throws<WorkflowRuleViolation>(() => PublishingPolicy.EnsureCanUpload(ProductionState.Rendered, [RightsStatus.Licensed]));
+        Assert.Throws<WorkflowRuleViolation>(() => PublishingPolicy.EnsureCanUpload(ProductionState.PublishApproved, [RightsStatus.Unknown]));
+        PublishingPolicy.EnsureCanUpload(ProductionState.PublishApproved, [RightsStatus.Licensed]);
+    }
 }
