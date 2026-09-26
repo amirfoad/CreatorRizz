@@ -1,8 +1,11 @@
+using CreatorRizz.Application;
 using CreatorRizz.Application.Abstractions;
 using CreatorRizz.Domain;
+using CreatorRizz.Infrastructure.Jobs;
 using CreatorRizz.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using System.Text.Json;
 using Xunit;
 
 namespace CreatorRizz.Persistence.Tests;
@@ -35,6 +38,108 @@ public sealed class PostgresPersistenceTests(PostgresFixture fixture)
         Assert.Contains("asset_usages", tables);
         Assert.Contains("review_decisions", tables);
         Assert.Contains("audit_events", tables);
+        Assert.Contains("job_outbox", tables);
+    }
+
+    [Fact]
+    public async Task ARenderThatCannotBeRecordedLeavesTheProductionOutOfRendering()
+    {
+        var production = CreateProductionWithApprovedRights();
+        var manifest = new RenderManifest(production, 1080, 1920,
+            [new TimelineClip(GetAssets(production).Single().Id, 0, 3000, 0)], [], "voice/one.mp3");
+
+        await using (var context = fixture.CreateContext())
+        {
+            var workflow = WorkflowUsing(context, new UnrecordableJobQueue());
+            await Assert.ThrowsAsync<InvalidOperationException>(() =>
+                workflow.QueueRenderAsync(production, GetVersion(production), manifest, CancellationToken.None).AsTask());
+        }
+
+        // Before the outbox this was the failure mode: the production sat in Rendering waiting for a
+        // render that had never been recorded anywhere.
+        Assert.Equal(ProductionState.RightsApproved, GetState(production));
+        Assert.Equal(0, CountOutboxEntries(production));
+    }
+
+    [Fact]
+    public async Task QueuingARenderRecordsTheWorkAlongsideTheStateChange()
+    {
+        var production = CreateProductionWithApprovedRights();
+        var manifest = new RenderManifest(production, 1080, 1920,
+            [new TimelineClip(GetAssets(production).Single().Id, 0, 3000, 0)], [], "voice/one.mp3");
+        var versionReadByCaller = GetVersion(production);
+
+        await using (var context = fixture.CreateContext())
+            await WorkflowUsing(context, new PostgresProductionJobQueue(context))
+                .QueueRenderAsync(production, versionReadByCaller, manifest, CancellationToken.None);
+
+        Assert.Equal(ProductionState.Rendering, GetState(production));
+
+        var entry = ReadOutboxEntry(production);
+        Assert.Equal(ProductionJobKind.Render, entry.Kind);
+        Assert.Equal(production, entry.ProductionId);
+        Assert.Equal(ProductionJobKey.ForRender(production, versionReadByCaller), entry.IdempotencyKey);
+        Assert.Equal(production, JsonSerializer.Deserialize<RenderManifest>(entry.PayloadJson)!.ProductionId);
+    }
+
+    [Fact]
+    public async Task RecordingTheSameRenderTwiceIsOnePieceOfWork()
+    {
+        var production = CreateProductionWithApprovedRights();
+        var manifest = new RenderManifest(production, 1080, 1920,
+            [new TimelineClip(GetAssets(production).Single().Id, 0, 3000, 0)], [], "voice/one.mp3");
+        var key = ProductionJobKey.ForRender(production, GetVersion(production));
+
+        await using (var context = fixture.CreateContext())
+        {
+            var jobs = new PostgresProductionJobQueue(context);
+            await jobs.EnqueueRenderAsync(manifest, key, CancellationToken.None);
+            await jobs.EnqueueRenderAsync(manifest, key, CancellationToken.None);
+        }
+
+        Assert.Equal(1, CountOutboxEntries(production));
+    }
+
+    /// <summary>
+    /// Shares one context across the transaction, the production repository and the queue, which is what
+    /// the composition root does at runtime and what makes the two writes one commit.
+    /// </summary>
+    private CreatorRizzWorkflow WorkflowUsing(CreatorRizzDbContext context, IProductionJobQueue jobs) => new(
+        new PostgresCandidateRepository(context, ViralScoreWeights.Version1),
+        new PostgresProductionRepository(context),
+        jobs,
+        new UnusableScriptGenerator(),
+        new PostgresWorkflowTransaction(context),
+        ViralScoreWeights.Version1);
+
+    // The fixture shares one database across the whole collection, so every outbox assertion is scoped to
+    // its own production rather than counting the table.
+    private int CountOutboxEntries(Guid production)
+    {
+        using var context = fixture.CreateContext();
+        return context.JobOutbox.Count(entry => entry.ProductionId == production);
+    }
+
+    private JobOutboxEntry ReadOutboxEntry(Guid production)
+    {
+        using var context = fixture.CreateContext();
+        return context.JobOutbox.AsNoTracking().Single(entry => entry.ProductionId == production);
+    }
+
+    /// <summary>Queuing a render must never reach for the model, so this fails loudly if it does.</summary>
+    private sealed class UnusableScriptGenerator : IScriptGenerator
+    {
+        public ValueTask<GeneratedScript> GenerateAsync(ScriptGenerationRequest request, CancellationToken cancellationToken) =>
+            throw new NotSupportedException("Queuing a render must not generate a script.");
+    }
+
+    private sealed class UnrecordableJobQueue : IProductionJobQueue
+    {
+        public ValueTask EnqueueTextToSpeechAsync(TextToSpeechJob job, string idempotencyKey, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("The queue could not record the work.");
+
+        public ValueTask EnqueueRenderAsync(RenderManifest manifest, string idempotencyKey, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("The queue could not record the work.");
     }
 
     [Fact]

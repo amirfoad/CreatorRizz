@@ -9,6 +9,7 @@ public sealed class CreatorRizzWorkflow(
     IProductionRepository productions,
     IProductionJobQueue jobs,
     IScriptGenerator scriptGenerator,
+    IWorkflowTransaction transactions,
     ViralScoreWeights viralScoreWeights)
 {
     public IReadOnlyCollection<TopicCandidate> ListCandidates() => candidates.List();
@@ -108,14 +109,22 @@ public sealed class CreatorRizzWorkflow(
         var script = productions.GetScripts(productionId).LastOrDefault() ?? throw new WorkflowRuleViolation("A script is required before TTS.");
         if (speed is < 0.5m or > 2m) throw new ArgumentOutOfRangeException(nameof(speed), "Speech speed must be between 0.5 and 2.0.");
         var effectiveVoiceId = string.IsNullOrWhiteSpace(voiceId) ? "alloy" : voiceId;
-        await jobs.EnqueueTextToSpeechAsync(new TextToSpeechJob(productionId, script.Body, effectiveVoiceId, speed), cancellationToken);
+        var job = new TextToSpeechJob(productionId, script.Body, effectiveVoiceId, speed);
+        await jobs.EnqueueTextToSpeechAsync(job, ProductionJobKey.ForTextToSpeech(productionId, production.Version), cancellationToken);
     }
 
     public async ValueTask QueueRenderAsync(Guid productionId, int expectedVersion, RenderManifest manifest, CancellationToken cancellationToken)
     {
         if (manifest.ProductionId != productionId) throw new WorkflowRuleViolation("Render manifest must reference the production being rendered.");
-        productions.BeginRendering(productionId, expectedVersion, manifest);
-        await jobs.EnqueueRenderAsync(manifest, cancellationToken);
+        // The state change and the record of the work it implies commit together. Committing the state
+        // first leaves a crash in between with the production in Rendering and no queued work, and
+        // nothing reconciles a production waiting for a render that was never recorded.
+        await transactions.RunAsync(async token =>
+        {
+            productions.BeginRendering(productionId, expectedVersion, manifest);
+            await jobs.EnqueueRenderAsync(manifest, ProductionJobKey.ForRender(productionId, expectedVersion), token);
+            return true;
+        }, cancellationToken);
     }
 
     private Production GetProduction(Guid productionId) => productions.TryGet(productionId, out var production) && production is not null

@@ -10,8 +10,6 @@ public sealed class DiscoveryOptions
     public int PollIntervalSeconds { get; init; } = 900;
     public List<DiscoveryFeedOptions> Feeds { get; init; } = [];
     public ViralScoreWeightsOptions Weights { get; init; } = new();
-
-    public ViralScoreWeights ToWeights() => Weights.ToWeights();
 }
 
 /// <summary>One RSS feed the discovery worker is allowed to read.</summary>
@@ -25,9 +23,20 @@ public sealed class DiscoveryFeedOptions
     {
         if (!Uri.TryCreate(Url, UriKind.Absolute, out var uri))
             throw new InvalidOperationException($"Discovery feed '{Name}' is not an absolute URL.");
-        var allowed = AllowedHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase);
-        if (!allowed)
-            throw new InvalidOperationException($"Discovery feed '{Name}' points at '{uri.Host}', which is not in its own allowlist. Add the host to AllowedHosts before it can be fetched.");
+        EnsureHostAllowed(uri, "which is not in its own allowlist. Add the host to AllowedHosts before it can be fetched.");
+    }
+
+    /// <summary>
+    /// Checks one hop of a fetch, not just the configured URL. An allowlisted feed can answer with a
+    /// redirect to anywhere, so a host that was never allowlisted would otherwise be pulled in.
+    /// </summary>
+    public void EnsureHostAllowed(Uri uri, string problem)
+    {
+        ArgumentNullException.ThrowIfNull(uri);
+        if (uri.Scheme is not ("http" or "https"))
+            throw new InvalidOperationException($"Discovery feed '{Name}' resolves to '{uri}', which is not an http or https URL.");
+        if (!AllowedHosts.Contains(uri.Host, StringComparer.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Discovery feed '{Name}' resolves to '{uri.Host}', {problem}");
     }
 }
 

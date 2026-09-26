@@ -2,6 +2,7 @@ using CreatorRizz.Api.Contracts;
 using CreatorRizz.Api.Middleware;
 using CreatorRizz.Api.Results;
 using CreatorRizz.Application;
+using CreatorRizz.Application.Abstractions;
 using CreatorRizz.Domain;
 using CreatorRizz.Infrastructure.Storage;
 using HttpResults = Microsoft.AspNetCore.Http.Results;
@@ -65,6 +66,8 @@ public static class ProductionEndpoints
         catch (KeyNotFoundException) { return HttpResults.NotFound(); }
         catch (ArgumentException exception) { return HttpResults.BadRequest(new { error = exception.Message }); }
         catch (WorkflowRuleViolation exception) { return HttpResults.Conflict(new { error = exception.Message }); }
+        // A provider failure is upstream of this service, so it is not reported as a refused draft.
+        catch (ScriptGenerationFailedException exception) { return ApiResults.ProviderFailure(exception); }
         catch (InvalidOperationException exception) { return HttpResults.Conflict(new { error = exception.Message }); }
     }
 

@@ -181,13 +181,14 @@ public sealed class ProductionStateTests
     }
 
     [Fact]
-    public async Task BackgroundQueuePreservesJobTypeAndPayload()
+    public void JobKeysSeparateRenderFromSpeechAndOneVersionFromTheNext()
     {
-        IBackgroundJobQueue queue = new InMemoryBackgroundJobQueue();
-        await queue.EnqueueAsync("research", "{\"candidateId\":\"abc\"}", CancellationToken.None);
-        var job = await queue.DequeueAsync(CancellationToken.None);
-        Assert.Equal("research", job.Type);
-        Assert.Equal("{\"candidateId\":\"abc\"}", job.PayloadJson);
+        var production = Guid.NewGuid();
+
+        var firstRender = ProductionJobKey.ForRender(production, 3);
+        Assert.NotEqual(firstRender, ProductionJobKey.ForRender(production, 4));
+        Assert.NotEqual(firstRender, ProductionJobKey.ForTextToSpeech(production, 3));
+        Assert.Equal(firstRender, ProductionJobKey.ForRender(production, 3));
     }
 
     [Fact]

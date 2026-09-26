@@ -32,4 +32,25 @@ internal static class DbContextSaveExtensions
             throw new InvalidOperationException("PostgreSQL could not persist the workflow change.", exception);
         }
     }
+
+    public static async Task SaveOutboxChangesAsync(this CreatorRizzDbContext database, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await database.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            throw;
+        }
+        catch (DbUpdateException exception) when (exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } violation)
+        {
+            throw new InvalidOperationException(
+                $"A record that must be unique already exists. Database constraint: {violation.ConstraintName}.", exception);
+        }
+        catch (DbUpdateException exception)
+        {
+            throw new InvalidOperationException("PostgreSQL could not record the queued work.", exception);
+        }
+    }
 }

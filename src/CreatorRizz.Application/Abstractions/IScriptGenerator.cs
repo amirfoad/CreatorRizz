@@ -22,3 +22,11 @@ public interface IScriptGenerator
 {
     ValueTask<GeneratedScript> GenerateAsync(ScriptGenerationRequest request, CancellationToken cancellationToken);
 }
+
+/// <summary>
+/// The provider was reached but did not return a script that can be audited. This is deliberately not
+/// a <see cref="InvalidOperationException"/>: the request was well formed and no review gate is at
+/// fault, so callers must be able to tell a provider failure apart from a refused draft.
+/// </summary>
+public sealed class ScriptGenerationFailedException(string message, Exception? innerException = null)
+    : Exception(message, innerException);

@@ -15,6 +15,7 @@ public sealed class CreatorRizzDbContext(DbContextOptions<CreatorRizzDbContext> 
     public DbSet<AssetUsage> AssetUsages => Set<AssetUsage>();
     public DbSet<ReviewDecision> ReviewDecisions => Set<ReviewDecision>();
     public DbSet<AuditEvent> AuditEvents => Set<AuditEvent>();
+    public DbSet<JobOutboxEntry> JobOutbox => Set<JobOutboxEntry>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -165,6 +166,23 @@ public sealed class CreatorRizzDbContext(DbContextOptions<CreatorRizzDbContext> 
             entity.Property(item => item.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
             entity.Property(item => item.OccurredAt).HasColumnName("occurred_at");
             entity.HasIndex(item => new { item.EntityType, item.EntityId, item.OccurredAt });
+        });
+
+        modelBuilder.Entity<JobOutboxEntry>(entity =>
+        {
+            entity.ToTable("job_outbox");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).HasColumnName("id");
+            entity.Property(item => item.Kind).HasColumnName("kind").HasConversion<string>().HasMaxLength(50);
+            entity.Property(item => item.ProductionId).HasColumnName("production_id");
+            entity.Property(item => item.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(200);
+            entity.Property(item => item.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
+            entity.Property(item => item.CreatedAt).HasColumnName("created_at");
+            // The database, not the application, decides that one request is one unit of work. An
+            // enqueue replayed inside a retried transaction then cannot become a second render.
+            entity.HasIndex(item => item.IdempotencyKey).IsUnique();
+            entity.HasIndex(item => new { item.Kind, item.ProductionId });
+            entity.HasOne<Production>().WithMany().HasForeignKey(item => item.ProductionId).OnDelete(DeleteBehavior.Restrict);
         });
     }
 }

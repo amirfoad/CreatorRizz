@@ -1,3 +1,4 @@
+using CreatorRizz.Application.Abstractions;
 using CreatorRizz.Domain;
 using HttpResults = Microsoft.AspNetCore.Http.Results;
 
@@ -34,4 +35,11 @@ internal static class ApiResults
     /// </summary>
     public static IResult VersionConflict(ProductionVersionConflict exception) =>
         HttpResults.Conflict(new { error = exception.Message, currentVersion = exception.CurrentVersion });
+
+    /// <summary>
+    /// A provider failure is upstream of this service, so it answers 502 rather than the 409 the same
+    /// message would get as a refused draft. A client that reads 409 stops; one that reads 502 retries.
+    /// </summary>
+    public static IResult ProviderFailure(ScriptGenerationFailedException exception) =>
+        HttpResults.Problem(exception.Message, statusCode: StatusCodes.Status502BadGateway);
 }

@@ -2,6 +2,7 @@ using CreatorRizz.Application;
 using CreatorRizz.Application.Abstractions;
 using CreatorRizz.Domain;
 using CreatorRizz.Infrastructure.Persistence;
+using CreatorRizz.Infrastructure.Jobs;
 using CreatorRizz.Infrastructure.Scripting;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
@@ -154,12 +155,21 @@ public sealed class DiscoveryWorkflowTests(PostgresFixture fixture)
         Assert.Contains("Research pack is required", failure.Message);
     }
 
-    private CreatorRizzWorkflow CreateWorkflow(IScriptGenerator? scriptGenerator = null) => new(
-        new PostgresCandidateRepository(NewContext(), ViralScoreWeights.Version1),
-        new PostgresProductionRepository(NewContext()),
-        new ThrowingProductionJobQueue(),
-        scriptGenerator ?? new FakeScriptGenerator(),
-        ViralScoreWeights.Version1);
+    /// <summary>
+    /// The transaction and the production repository must share one context, because that shared scope
+    /// is what lets a state change and the work it queues commit together.
+    /// </summary>
+    private CreatorRizzWorkflow CreateWorkflow(IScriptGenerator? scriptGenerator = null)
+    {
+        var context = NewContext();
+        return new CreatorRizzWorkflow(
+            new PostgresCandidateRepository(context, ViralScoreWeights.Version1),
+            new PostgresProductionRepository(context),
+            new ThrowingProductionJobQueue(),
+            scriptGenerator ?? new FakeScriptGenerator(),
+            new PostgresWorkflowTransaction(context),
+            ViralScoreWeights.Version1);
+    }
 
     private CreatorRizzDbContext NewContext() => fixture.CreateContext();
 
@@ -202,10 +212,10 @@ public sealed class DiscoveryWorkflowTests(PostgresFixture fixture)
 
     private sealed class ThrowingProductionJobQueue : IProductionJobQueue
     {
-        public ValueTask EnqueueTextToSpeechAsync(TextToSpeechJob job, CancellationToken cancellationToken) =>
+        public ValueTask EnqueueTextToSpeechAsync(TextToSpeechJob job, string idempotencyKey, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
 
-        public ValueTask EnqueueRenderAsync(RenderManifest manifest, CancellationToken cancellationToken) =>
+        public ValueTask EnqueueRenderAsync(RenderManifest manifest, string idempotencyKey, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
     }
 }
