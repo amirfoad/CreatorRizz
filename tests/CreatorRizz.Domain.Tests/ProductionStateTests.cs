@@ -166,12 +166,13 @@ public sealed class ProductionStateTests
         {
             var storage = new LocalObjectStorage(path);
             await using var input = new MemoryStream("hello"u8.ToArray());
-            var stored = await storage.PutAsync("assets/hello.txt", input, CancellationToken.None);
+            var stored = await storage.PutAsync(input, CancellationToken.None);
             Assert.Equal(5, stored.Length);
             await using var output = await storage.OpenReadAsync(stored.ObjectKey, CancellationToken.None);
             using var reader = new StreamReader(output);
-            Assert.Equal("hello", await reader.ReadToEndAsync());
-            await Assert.ThrowsAsync<ArgumentException>(async () => await storage.PutAsync("../escape.txt", new MemoryStream(), CancellationToken.None));
+            Assert.Equal("hello", reader.ReadToEnd());
+
+            await Assert.ThrowsAsync<ArgumentException>(async () => await storage.OpenReadAsync("../escape.txt", CancellationToken.None));
         }
         finally
         {

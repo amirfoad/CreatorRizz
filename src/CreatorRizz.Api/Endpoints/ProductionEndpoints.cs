@@ -3,6 +3,7 @@ using CreatorRizz.Api.Middleware;
 using CreatorRizz.Api.Results;
 using CreatorRizz.Application;
 using CreatorRizz.Domain;
+using CreatorRizz.Infrastructure.Storage;
 using HttpResults = Microsoft.AspNetCore.Http.Results;
 
 namespace CreatorRizz.Api.Endpoints;
@@ -23,7 +24,20 @@ public static class ProductionEndpoints
         productions.MapPost("/{id:guid}/tts", QueueTts);
         productions.MapPost("/{id:guid}/render", QueueRender);
         productions.MapGet("/{id:guid}/audit-events", GetAuditEvents);
-        productions.MapPost("/{id:guid}/assets", AttachAsset);
+        productions.MapPost("/{id:guid}/assets", async (Guid id, AttachAssetRequest request, HttpContext context, CreatorRizzWorkflow workflow, IObjectStorage storage) =>
+        {
+            try
+            {
+                using var stream = new MemoryStream(request.Data);
+                var stored = await storage.PutAsync(stream, context.RequestAborted);
+                ApiResults.Execute(() => workflow.AttachAsset(id, ProductionVersionPreconditionMiddleware.ReadExpectedVersion(context), stored, request.Type, request.SourceUrl, request.RightsStatus, request.NarrativePurpose, request.LicenseEvidence));
+                return HttpResults.Ok();
+            }
+            catch (KeyNotFoundException) { return HttpResults.NotFound(); }
+            catch (ArgumentException exception) { return HttpResults.BadRequest(new { error = exception.Message }); }
+            catch (WorkflowRuleViolation exception) { return HttpResults.Conflict(new { error = exception.Message }); }
+            catch (InvalidOperationException exception) { return HttpResults.Conflict(new { error = exception.Message }); }
+        });
         productions.MapPost("/{id:guid}/assets/prepare", BeginAssetPreparation);
         productions.MapPost("/{id:guid}/assets/ready", DeclareAssetsReady);
         productions.MapPost("/{id:guid}/render/complete", CompleteRendering);
@@ -97,17 +111,6 @@ public static class ProductionEndpoints
 
     private static IResult GetAuditEvents(Guid id, CreatorRizzWorkflow workflow) =>
         workflow.TryGetProduction(id, out _) ? HttpResults.Ok(workflow.GetAuditEvents(id)) : HttpResults.NotFound();
-
-    private static IResult AttachAsset(Guid id, AttachAssetRequest request, HttpContext context, CreatorRizzWorkflow workflow) =>
-        ApiResults.Execute(() => workflow.AttachAsset(id, ProductionVersionPreconditionMiddleware.ReadExpectedVersion(context), new Asset
-        {
-            ObjectKey = request.ObjectKey,
-            Type = request.Type,
-            SourceUrl = request.SourceUrl,
-            RightsStatus = request.RightsStatus,
-            LicenseEvidence = request.LicenseEvidence,
-            Checksum = request.Checksum
-        }, request.NarrativePurpose));
 
     private static IResult BeginAssetPreparation(Guid id, HttpContext context, CreatorRizzWorkflow workflow) =>
         ApiResults.Execute(() => workflow.BeginAssetPreparation(id, ProductionVersionPreconditionMiddleware.ReadExpectedVersion(context)));

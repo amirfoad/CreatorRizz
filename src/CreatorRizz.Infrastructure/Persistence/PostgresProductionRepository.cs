@@ -51,11 +51,28 @@ public sealed class PostgresProductionRepository(CreatorRizzDbContext database) 
         SaveVersion(id, expectedVersion);
     }
 
-    public void AttachAsset(Guid id, int expectedVersion, Asset asset, string narrativePurpose)
+    public void AttachAsset(Guid id, int expectedVersion, StoredObject stored, string type, string? sourceUrl, RightsStatus rightsStatus, string narrativePurpose, string? licenseEvidence)
     {
         var production = GetRequired(id, expectedVersion);
-        if (!AssetRightsPolicy.CanAttach(asset.RightsStatus)) throw new WorkflowRuleViolation($"Asset status {asset.RightsStatus} cannot be attached.");
-        database.Assets.Add(asset);
+        if (!AssetRightsPolicy.CanAttach(rightsStatus)) throw new WorkflowRuleViolation($"Asset status {rightsStatus} cannot be attached.");
+        var existing = database.Assets.AsNoTracking().FirstOrDefault(asset => asset.Checksum == stored.Checksum);
+        var objectKey = existing?.ObjectKey ?? stored.ObjectKey;
+        // A duplicate of the same content already exists; reuse the stored key and do
+        // not write the file bytes a second time. The new Asset still records its own
+        // usage but shares the immutable object storage.
+        var asset = existing ?? new Asset
+        {
+            ObjectKey = objectKey,
+            Type = type,
+            SourceUrl = sourceUrl,
+            RightsStatus = rightsStatus,
+            LicenseEvidence = licenseEvidence,
+            Checksum = stored.Checksum
+        };
+        if (existing is null)
+        {
+            database.Assets.Add(asset);
+        }
         database.AssetUsages.Add(new AssetUsage
         {
             ProductionId = id,
@@ -64,7 +81,7 @@ public sealed class PostgresProductionRepository(CreatorRizzDbContext database) 
         });
         production.State = ProductionWorkflow.InvalidateRightsForAssetChange(production.State);
         production.Version++;
-        AddAudit("system", "AssetAttached", "Production", id, asset.RightsStatus.ToString());
+        AddAudit("system", "AssetAttached", "Production", id, rightsStatus.ToString());
         SaveVersion(id, expectedVersion);
     }
 

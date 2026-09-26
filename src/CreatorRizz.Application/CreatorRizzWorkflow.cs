@@ -93,8 +93,8 @@ public sealed class CreatorRizzWorkflow(
     public IReadOnlyCollection<ScriptGeneration> GetScriptGenerations(Guid productionId) => productions.GetScriptGenerations(productionId);
     public ScriptVersion AddScript(Guid productionId, int expectedVersion, string body, string claimMapJson) => productions.AddScript(productionId, expectedVersion, body, claimMapJson);
     public IReadOnlyCollection<AuditEvent> GetAuditEvents(Guid productionId) => productions.GetAuditEvents(productionId);
-    public void AttachAsset(Guid productionId, int expectedVersion, Asset asset, string narrativePurpose) =>
-        productions.AttachAsset(productionId, expectedVersion, asset, AssetUsagePolicy.NormalizePurpose(narrativePurpose));
+    public void AttachAsset(Guid productionId, int expectedVersion, StoredObject stored, string type, string? sourceUrl, RightsStatus rightsStatus, string narrativePurpose, string? licenseEvidence) =>
+        productions.AttachAsset(productionId, expectedVersion, stored, type, sourceUrl, rightsStatus, AssetUsagePolicy.NormalizePurpose(narrativePurpose), licenseEvidence);
     public void BeginAssetPreparation(Guid productionId, int expectedVersion) => productions.BeginAssetPreparation(productionId, expectedVersion);
     public void DeclareAssetsReady(Guid productionId, int expectedVersion) => productions.DeclareAssetsReady(productionId, expectedVersion);
     public void CompleteRendering(Guid productionId, int expectedVersion) => productions.CompleteRendering(productionId, expectedVersion);

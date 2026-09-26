@@ -4,6 +4,8 @@
 
 Planهای 002 و 003 باید DONE باشند.
 
+## وضعیت: DONE
+
 ## هدف
 
 سیستم از sourceهای مجاز Candidate می‌سازد، آن‌ها را رتبه‌بندی می‌کند و فقط بر مبنای source itemهای ذخیره‌شده، research pack و script draft تولید می‌کند.
@@ -17,18 +19,19 @@ Planهای 002 و 003 باید DONE باشند.
 
 ## مراحل
 
-1. یک `IDiscoverySource` interface بسازید و MVP را با YouTube Data API و RSS/mock provider آغاز کنید. از scraping یا دانلود محتوا خارج از scope خودداری کنید.
-2. Candidate را با canonical URL و fingerprint deduplicate کنید.
-3. ViralScore v1 را با وزن‌های configurable اجرا کنید: view velocity 35، engagement 20، recency 15، creator relevance 10، cross-source 10، story potential 10.
-4. research worker باید source itemها را ذخیره و fact/uncertainty را جدا کند. اگر منابع کافی نیستند، production نسازید.
-5. AI adapter باید prompt version، model id، input references و output را ذخیره کند. Script claim map باید هر claim را به SourceItem وصل کند.
+1. یک `IDiscoverySource` interface بسازید و MVP را با RSS/mock provider آغاز کنید. از scraping یا دانلود محتوا خارج از scope خودداری کنید. YouTube فعلاً فعال نیست چون quota و Terms تأیید نشده.
+2. Candidate را با canonical URL و fingerprint SHA-256 نرمال‌شدهٔ title|creator deduplicate کنید. ردیف‌های قدیمی collision دار با id خودشان salted می‌شوند و هیچ داده‌ای از بین نمی‌رود.
+3. ViralScore v1 را با وزن‌های configurable اجرا کنید: view velocity 35، engagement 20، recency 15، creator relevance 10، cross-source 10، story potential 10. مجموع باید دقیقاً ۱۰۰ باشد و نام ناشناختهٔ weight در startup صدا می‌زند.
+4. research worker باید source itemها را ذخیره و fact/uncertainty را جدا کند. حداقل دو منبع با reliability ≥ 50 و excerpt لازم است؛ در غیر این صورت pack ساخته نمی‌شود.
+5. AI adapter (`IScriptGenerator`) validate می‌کند و خطا می‌دهد. `DisabledScriptGenerator` بدون مدل و بدون API key، production را با ۴۰۹ رد می‌کند. `ScriptGeneration` با `ScriptVersion` در یک write اتمی ثبت می‌شود.
 
 ## پذیرش و verification
 
-- یک provider fake، Candidateهای تکراری را تنها یک بار ثبت می‌کند.
-- ViralScore با ورودی ثابت deterministic است.
+- یک provider fake، Candidateهای تکراری را تنها یک بار ثبت می‌کند؛ داستان قدیمی با URL جدید و نگارش متفاوت همون candidate را برمی‌گرداند.
+- ViralScore با ورودی ثابت deterministic است؛ backfill SQL همان hash domain را تولید می‌کند (تست `FingerprintBackfillTests` شامل فارسی).
 - script draft بدون ResearchPack یا claim map وارد review نمی‌شود.
-- job retry یک Candidate duplicate یا script version تکراری تولید نمی‌کند.
+- بدون `If-Match`، draft ۴۲۸ می‌دهد؛ با disabled generator، ۴۰۹ و بدون هیچ تغییری در version.
+- worker retry هیچ duplicate یا version تکراری تولید نمی‌کند.
 
 ## STOP conditions
 

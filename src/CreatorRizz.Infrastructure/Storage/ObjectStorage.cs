@@ -1,33 +1,55 @@
 using System.Security.Cryptography;
+using CreatorRizz.Domain;
 
 namespace CreatorRizz.Infrastructure.Storage;
 
-public sealed record StoredObject(string ObjectKey, string Checksum, long Length);
-
 public interface IObjectStorage
 {
-    Task<StoredObject> PutAsync(string objectKey, Stream content, CancellationToken cancellationToken);
+    Task<StoredObject> PutAsync(Stream content, CancellationToken cancellationToken);
     Task<Stream> OpenReadAsync(string objectKey, CancellationToken cancellationToken);
 }
 
 public sealed class LocalObjectStorage(string rootPath) : IObjectStorage
 {
-    public async Task<StoredObject> PutAsync(string objectKey, Stream content, CancellationToken cancellationToken)
+    public async Task<StoredObject> PutAsync(Stream content, CancellationToken cancellationToken)
     {
-        var path = ResolvePath(objectKey);
-        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        await using var destination = File.Create(path);
+        var tempPath = Path.Combine(rootPath, $".tmp-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(rootPath);
+        long length = 0;
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         var buffer = new byte[81920];
-        long length = 0;
-        int read;
-        while ((read = await content.ReadAsync(buffer, cancellationToken)) > 0)
+        try
         {
-            hash.AppendData(buffer, 0, read);
-            await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
-            length += read;
+            await using (var destination = File.Create(tempPath))
+            {
+                int read;
+                while ((read = await content.ReadAsync(buffer, cancellationToken)) > 0)
+                {
+                    hash.AppendData(buffer, 0, read);
+                    await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken);
+                    length += read;
+                }
+            }
+            var checksum = Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant();
+            var objectKey = checksum;
+            var path = ResolvePath(objectKey);
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            if (File.Exists(path))
+            {
+                File.Delete(tempPath);
+                return new StoredObject(objectKey, checksum, new FileInfo(path).Length);
+            }
+            File.Move(tempPath, path);
+            return new StoredObject(objectKey, checksum, length);
         }
-        return new StoredObject(objectKey, Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant(), length);
+        catch
+        {
+            if (File.Exists(tempPath))
+            {
+                try { File.Delete(tempPath); } catch { }
+            }
+            throw;
+        }
     }
 
     public Task<Stream> OpenReadAsync(string objectKey, CancellationToken cancellationToken)

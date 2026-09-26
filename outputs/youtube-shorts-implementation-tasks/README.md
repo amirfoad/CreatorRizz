@@ -11,7 +11,7 @@
 | [001](001-bootstrap.md) | Bootstrap و قراردادهای اجرایی | M | - | IN PROGRESS  CI is manual-only; .NET build/test passed; web dependency install remains an environment gate |
 | [002](002-domain-persistence.md) | مدل دامنه و persistence | M | 001 | DONE  PostgreSQL تنها مسیر persistence؛ EF Core مالک schema؛ تست integration روی دیتابیس واقعی |
 | [003](003-workflow-reviews-api.md) | state machine و API بازبینی | M | 002 | DONE  گیت‌های کامل تا PublishApproved، optimistic concurrency با If-Match/ETag، تست integration روی PostgreSQL |
-| [004](004-discovery-research-script.md) | Discovery، research و script | L | 002، 003 | IN PROGRESS  Candidate intake, dedupe and ViralScore v1 added; external sources and AI adapter remain |
+| [004](004-discovery-research-script.md) | Discovery، research و script | L | 002، 003 | DONE  fingerprint dedupe، ViralScore v1 configurable، research pack ≥2 sources، DisabledScriptGenerator، worker timer-based، migration با backfill SQL |
 | [005](005-assets-rights.md) | registry دارایی و گیت حقوق | M | 003 | IN PROGRESS  Rights policy and local asset attachment added; object storage remains pending |
 | [006](006-voice-render-subtitles.md) | TTS، FFmpeg و subtitle | L | 004، 005 | IN PROGRESS  Render manifest and FFmpeg preflight adapter added; FFmpeg binary and media storage are not available |
 | [007](007-react-operations-ui.md) | داشبورد React و صف عملیاتی | L | 003 تا 006 | TODO |
@@ -60,7 +60,7 @@
 - [x] ✅ صدای پیش‌فرض TTS برابر alloy با امکان override برای هر ویدئو
 - [x] ✅ API صف TTS که فقط بعد از ScriptApproved اجرا می‌شود
 - [x] ✅ API صف render که RightsApproved و manifest معتبر را الزامی می‌کند
-- [ ] ⏳ discovery از YouTube/RSS، research worker و AI script adapter
+- [x] ✅ discovery از YouTube/RSS، research worker و AI script adapter
 - [ ] ⏳ TTS، FFmpeg واقعی، subtitle و preview
 - [ ] ⏳ React operations dashboard
 - [ ] ⏳ YouTube OAuth و private upload

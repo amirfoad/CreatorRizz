@@ -6,6 +6,7 @@ using CreatorRizz.Infrastructure.Jobs;
 using CreatorRizz.Infrastructure.Configuration;
 using CreatorRizz.Infrastructure.Discovery;
 using CreatorRizz.Infrastructure.Scripting;
+using CreatorRizz.Infrastructure.Storage;
 using CreatorRizz.Application.Abstractions;
 using CreatorRizz.Domain;
 using Microsoft.EntityFrameworkCore;
@@ -41,6 +42,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IScriptGenerator, DisabledScriptGenerator>();
         services.AddSingleton<IBackgroundJobQueue, InMemoryBackgroundJobQueue>();
         services.AddSingleton<IProductionJobQueue, InMemoryProductionJobQueue>();
+        services.AddSingleton<IObjectStorage>(provider => new LocalObjectStorage(
+            Path.Combine(AppContext.BaseDirectory, "storage")));
 
         services.AddHttpClient();
         foreach (var feed in configuration.GetSection(DiscoveryOptions.SectionName).Get<DiscoveryOptions>()?.Feeds ?? [])

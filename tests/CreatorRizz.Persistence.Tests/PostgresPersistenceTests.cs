@@ -278,7 +278,7 @@ public sealed class PostgresPersistenceTests(PostgresFixture fixture)
         var production = CreateProductionWithScript();
 
         Assert.Throws<ArgumentException>(() => AttachAsset(production,
-            new Asset { ObjectKey = "assets/one.mp4", Type = "video", RightsStatus = RightsStatus.Owned }, "   "));
+            new StoredObject("assets/one.mp4", Guid.NewGuid().ToString("N"), 0), "   "));
         Assert.Empty(GetAssets(production));
     }
 
@@ -288,7 +288,7 @@ public sealed class PostgresPersistenceTests(PostgresFixture fixture)
         var production = CreateProductionWithScript();
 
         var failure = Assert.Throws<WorkflowRuleViolation>(() => AttachAsset(production,
-            new Asset { ObjectKey = "assets/unknown.mp4", Type = "video", RightsStatus = RightsStatus.Unknown }, "hook"));
+            new StoredObject("assets/unknown.mp4", Guid.NewGuid().ToString("N"), 0), "hook", RightsStatus.Unknown));
 
         Assert.Contains("Unknown", failure.Message);
         Assert.Empty(GetAssets(production));
@@ -374,17 +374,12 @@ public sealed class PostgresPersistenceTests(PostgresFixture fixture)
             $"{{\"claim\":\"source-{CountScripts(production) + 1}\"}}"));
 
     private Asset AttachLicensedAsset(Guid production, string purpose) =>
-        AttachAsset(production, new Asset
-        {
-            ObjectKey = $"assets/{Guid.NewGuid():N}.mp4",
-            Type = "video",
-            RightsStatus = RightsStatus.Licensed
-        }, purpose);
+        AttachAsset(production, new StoredObject($"assets/{Guid.NewGuid():N}.mp4", Guid.NewGuid().ToString("N"), 0), purpose);
 
-    private Asset AttachAsset(Guid production, Asset asset, string purpose)
+    private Asset AttachAsset(Guid production, StoredObject stored, string purpose, RightsStatus rightsStatus = RightsStatus.Licensed)
     {
-        Mutate(repository => repository.AttachAsset(production, GetVersion(production), asset, purpose));
-        return asset;
+        Mutate(repository => repository.AttachAsset(production, GetVersion(production), stored, "video", null, rightsStatus, purpose, null));
+        return new Asset { Id = Guid.NewGuid(), ObjectKey = stored.ObjectKey, Type = "video", RightsStatus = rightsStatus, Checksum = stored.Checksum };
     }
 
     private void SubmitReview(Guid production, ReviewKind kind) =>

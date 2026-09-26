@@ -12,7 +12,7 @@ public interface IProductionRepository
     bool TryGet(Guid id, out Production? production);
     void Submit(Guid id, int expectedVersion, ReviewKind kind);
     void Decide(Guid id, int expectedVersion, ReviewKind kind, ReviewOutcome outcome, string reviewerId, string? notes);
-    void AttachAsset(Guid id, int expectedVersion, Asset asset, string narrativePurpose);
+    void AttachAsset(Guid id, int expectedVersion, StoredObject stored, string type, string? sourceUrl, RightsStatus rightsStatus, string narrativePurpose, string? licenseEvidence);
     void BeginAssetPreparation(Guid id, int expectedVersion);
     void DeclareAssetsReady(Guid id, int expectedVersion);
     void CompleteRendering(Guid id, int expectedVersion);
