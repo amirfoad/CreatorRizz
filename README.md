@@ -36,3 +36,5 @@ PostgreSQL schema در `db/init/001_schema.sql` قرار دارد و هنگام 
 Discovery اولیه RSS در `src/Shorts.Infrastructure/RssDiscovery.cs` قرار دارد. قبل از اتصال feedهای واقعی، آن‌ها باید در allowlist عملیاتی پروژه ثبت شوند.
 
 تا زمان اتصال PostgreSQL، داده‌های Candidate و Production در `InMemoryCandidateStore` و `InMemoryProductionStore` نگه‌داری می‌شوند؛ با توقف API حذف خواهند شد. این adapterها عمداً خارج از لایه API و زیر `src/Shorts.Infrastructure/Persistence` قرار دارند.
+
+در API، `Program.cs` فقط composition root است. قراردادهای HTTP در `Contracts/`، endpointهای هر جریان در `Endpoints/` و ترجمهٔ خطاهای موردانتظار در `Results/` نگه‌داری می‌شوند.

@@ -9,6 +9,7 @@
 - Publish با فهرست خالی asset متوقف می‌شود.
 - title Candidate و reliability score منبع در مرز API اعتبارسنجی می‌شوند.
 - persistence موقت Candidate و Production از API به `Infrastructure/Persistence` منتقل شد؛ API اکنون فقط DTOهای HTTP را به adapter توسعه‌ای نگاشت می‌کند.
+- `Program.cs` به composition root کوچک تبدیل شد؛ endpointهای Candidate و Production و قراردادهای HTTP هر کدام مرز پوشه‌ای روشن دارند.
 
 ### کار باقی‌مانده
 
