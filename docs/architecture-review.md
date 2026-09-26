@@ -17,6 +17,7 @@
 - adapterهای Infrastructure از فایل‌های ریشه به پوشه‌های concern-based منتقل شدند؛ composition و options نیز جداگانه نگه‌داری می‌شوند.
 - EF Core/Npgsql و `CreatorRizzDbContext` به Infrastructure افزوده شدند و mapping صریح Candidate، Research، Production، Script، Asset، Review و Audit وجود دارد.
 - mappingها نام ستون PostgreSQL را صریح تعیین می‌کنند تا به convention casing وابسته نباشند.
+- `PostgresCandidateRepository` port مربوط به Candidate/Source/Research را پیاده‌سازی می‌کند؛ تا تکمیل repository Production هنوز adapter پیش‌فرض نیست.
 
 ### کار باقی‌مانده
 
