@@ -6,6 +6,8 @@ CreatorRizz ابزار داخلی برای کشف سوژه، تولید روای
 
 پالت رنگ و راهنمای استفاده در [Brand System](docs/brand/README.md) و فایل PDF مرجع آن قرار دارد.
 
+وضعیت اجرایی taskها در [Task Progress](docs/task-progress.md) ثبت می‌شود.
+
 ## ساختار
 
 - `src/Shorts.Api`: HTTP API و health endpoint
