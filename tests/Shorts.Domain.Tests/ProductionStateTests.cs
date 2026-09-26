@@ -92,4 +92,12 @@ public sealed class ProductionStateTests
         Assert.Contains("source-1", draft.ClaimMapJson);
         Assert.Contains("The event has been verified.", draft.Body);
     }
+
+    [Fact]
+    public void SubtitleWriterCreatesStandardSrtTiming()
+    {
+        var result = SrtSubtitleWriter.Write([new CaptionCue(1500, 3250, "Verified context")]);
+        Assert.Contains("00:00:01,500 --> 00:00:03,250", result);
+        Assert.Contains("Verified context", result);
+    }
 }
