@@ -1,4 +1,5 @@
 using Shorts.Domain;
+using Shorts.Infrastructure;
 using Xunit;
 
 namespace Shorts.Domain.Tests;
@@ -107,5 +108,26 @@ public sealed class ProductionStateTests
         Assert.Throws<WorkflowRuleViolation>(() => PublishingPolicy.EnsureCanUpload(ProductionState.Rendered, [RightsStatus.Licensed]));
         Assert.Throws<WorkflowRuleViolation>(() => PublishingPolicy.EnsureCanUpload(ProductionState.PublishApproved, [RightsStatus.Unknown]));
         PublishingPolicy.EnsureCanUpload(ProductionState.PublishApproved, [RightsStatus.Licensed]);
+    }
+
+    [Fact]
+    public async Task LocalObjectStoragePreservesContentAndRejectsTraversal()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"creatorrizz-{Guid.NewGuid():N}");
+        try
+        {
+            var storage = new LocalObjectStorage(path);
+            await using var input = new MemoryStream("hello"u8.ToArray());
+            var stored = await storage.PutAsync("assets/hello.txt", input, CancellationToken.None);
+            Assert.Equal(5, stored.Length);
+            await using var output = await storage.OpenReadAsync(stored.ObjectKey, CancellationToken.None);
+            using var reader = new StreamReader(output);
+            Assert.Equal("hello", await reader.ReadToEndAsync());
+            await Assert.ThrowsAsync<ArgumentException>(async () => await storage.PutAsync("../escape.txt", new MemoryStream(), CancellationToken.None));
+        }
+        finally
+        {
+            if (Directory.Exists(path)) Directory.Delete(path, recursive: true);
+        }
     }
 }
