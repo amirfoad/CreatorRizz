@@ -1,6 +1,7 @@
 using Shorts.Infrastructure;
 using Shorts.Api;
 using Shorts.Domain;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddShortsInfrastructure(builder.Configuration);
@@ -47,6 +48,17 @@ app.MapGet("/productions/{id:guid}/scripts", (Guid id, ProductionStore store) =>
     store.TryGet(id, out _) ? Results.Ok(store.GetScripts(id)) : Results.NotFound());
 app.MapPost("/productions/{id:guid}/scripts", (Guid id, CreateScriptRequest request, ProductionStore store) =>
     ExecuteWithResult(() => store.AddScript(id, request.Body, request.ClaimMapJson), Results.Ok));
+app.MapPost("/productions/{id:guid}/tts", async (Guid id, QueueTtsRequest request, ProductionStore store, IBackgroundJobQueue queue, CancellationToken cancellationToken) =>
+{
+    if (!store.TryGet(id, out var production) || production is null) return Results.NotFound();
+    if (production.State != ProductionState.ScriptApproved) return Results.Conflict(new { error = "Script approval is required before TTS." });
+    var script = store.GetScripts(id).LastOrDefault();
+    if (script is null) return Results.Conflict(new { error = "A script is required before TTS." });
+    var payload = new TextToSpeechRequest(id, script.Body, request.VoiceId, request.Speed);
+    if (payload.Speed is < 0.5m or > 2m) return Results.BadRequest(new { error = "Speech speed must be between 0.5 and 2.0." });
+    await queue.EnqueueAsync("tts", JsonSerializer.Serialize(new { payload.ProductionId, payload.Text, voiceId = payload.EffectiveVoiceId, payload.Speed }), cancellationToken);
+    return Results.Accepted($"/productions/{id}", new { voiceId = payload.EffectiveVoiceId, status = "queued" });
+});
 app.MapGet("/productions/{id:guid}/audit-events", (Guid id, ProductionStore store) =>
     store.TryGet(id, out _) ? Results.Ok(store.GetAuditEvents(id)) : Results.NotFound());
 app.MapPost("/productions/{id:guid}/assets", (Guid id, AttachAssetRequest request, ProductionStore store) =>
@@ -90,6 +102,7 @@ public sealed record CreateSourceRequest(string Url, string Publisher, string? E
 public sealed record CreateResearchPackRequest(string Summary, string FactsJson, string UncertaintyJson);
 public sealed record CreateProductionRequest(Guid CandidateId);
 public sealed record CreateScriptRequest(string Body, string ClaimMapJson);
+public sealed record QueueTtsRequest(string? VoiceId, decimal Speed = 1m);
 public sealed record AttachAssetRequest(string ObjectKey, string Type, string? SourceUrl, RightsStatus RightsStatus, string? LicenseEvidence, string? Checksum);
 public sealed record ProductionResponse(Guid Id, ProductionState State, int Version);
 public sealed record ReviewRequest(ReviewOutcome Outcome, string ReviewerId, string? Notes);
