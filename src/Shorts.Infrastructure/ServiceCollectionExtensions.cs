@@ -24,6 +24,7 @@ public static class ServiceCollectionExtensions
                 !string.IsNullOrWhiteSpace(options.ObjectStorageEndpoint),
                 "External service endpoints must be configured.")
             .ValidateOnStart();
+        services.AddSingleton<IBackgroundJobQueue, InMemoryBackgroundJobQueue>();
         return services;
     }
 }
