@@ -12,7 +12,7 @@ public static class ProductionEndpoints
 {
     public static IEndpointRouteBuilder MapProductionEndpoints(this IEndpointRouteBuilder app)
     {
-        var productions = app.MapGroup("/productions");
+        var productions = app.MapGroup("/productions").WithTags("Productions");
 
         productions.MapPost("", Create);
         productions.MapPost("/{id:guid}/scripts/draft-from-research", DraftFromResearch);

@@ -9,7 +9,7 @@ public static class CandidateEndpoints
 {
     public static IEndpointRouteBuilder MapCandidateEndpoints(this IEndpointRouteBuilder app)
     {
-        var candidates = app.MapGroup("/candidates");
+        var candidates = app.MapGroup("/candidates").WithTags("Candidates");
 
         candidates.MapGet("", (InMemoryCandidateStore store) => HttpResults.Ok(store.List()));
         candidates.MapPost("", (CreateCandidateRequest request, InMemoryCandidateStore store) =>
