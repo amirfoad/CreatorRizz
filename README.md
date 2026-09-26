@@ -20,3 +20,5 @@ CreatorRizz ابزار داخلی برای کشف سوژه، تولید روای
 6. از پوشه `web`: `npm ci`، سپس `npm run typecheck` و `npm run build`
 
 API در development با `dotnet run --project src/Shorts.Api` اجرا می‌شود و health check آن `GET /health` است.
+
+PostgreSQL schema در `db/init/001_schema.sql` قرار دارد و هنگام ساخت volume تازه توسط Docker Compose اجرا می‌شود.
