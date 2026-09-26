@@ -1,4 +1,4 @@
-namespace Shorts.Api;
+namespace Shorts.Api.Middleware;
 
 public sealed class CorrelationIdMiddleware(RequestDelegate next, ILogger<CorrelationIdMiddleware> logger)
 {

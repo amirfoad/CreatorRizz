@@ -37,4 +37,4 @@ Discovery اولیه RSS در `src/Shorts.Infrastructure/RssDiscovery.cs` قرا
 
 تا زمان اتصال PostgreSQL، داده‌های Candidate و Production در `InMemoryCandidateStore` و `InMemoryProductionStore` نگه‌داری می‌شوند؛ با توقف API حذف خواهند شد. این adapterها عمداً خارج از لایه API و زیر `src/Shorts.Infrastructure/Persistence` قرار دارند.
 
-در API، `Program.cs` فقط composition root است. قراردادهای HTTP در `Contracts/`، endpointهای هر جریان در `Endpoints/` و ترجمهٔ خطاهای موردانتظار در `Results/` نگه‌داری می‌شوند.
+در API، `Program.cs` فقط composition root است. قراردادهای HTTP در `Contracts/`، endpointهای هر جریان در `Endpoints/`، middlewareها در `Middleware/` و ترجمهٔ خطاهای موردانتظار در `Results/` نگه‌داری می‌شوند.

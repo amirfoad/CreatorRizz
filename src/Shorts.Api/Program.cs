@@ -1,5 +1,6 @@
 using Shorts.Api;
 using Shorts.Api.Endpoints;
+using Shorts.Api.Middleware;
 using Shorts.Infrastructure;
 using System.Threading.RateLimiting;
 
