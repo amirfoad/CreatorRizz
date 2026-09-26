@@ -8,6 +8,8 @@ CreatorRizz ابزار داخلی برای کشف سوژه، تولید روای
 
 وضعیت اجرایی taskها در [Task Progress](docs/task-progress.md) ثبت می‌شود.
 
+قواعد توسعه و معماری backend در [AGENTS.md](AGENTS.md) قرار دارد.
+
 ## ساختار
 
 - `src/Shorts.Api`: HTTP API و health endpoint

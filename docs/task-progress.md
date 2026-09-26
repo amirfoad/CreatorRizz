@@ -12,6 +12,7 @@
 - [x] audit trail، correlation ID، security header و rate limit
 - [x] parser RSS برای discovery اولیه
 - [x] لوگو و tokenهای رنگ CreatorRizz در رابط وب
+- [x] راهنمای توسعه AGENTS.md با اصول Clean Architecture، KISS، YAGNI و DRY
 - [ ] اتصال EF Core و Npgsql به PostgreSQL
 - [ ] provider واقعی AI، TTS و FFmpeg
 - [ ] React operations dashboard
