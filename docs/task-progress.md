@@ -21,6 +21,7 @@
 - [x] تفکیک لایه Domain به مدل‌ها، policyها، workflow، rendering، captions، scoring و scripting
 - [x] ایجاد CreatorRizz.Application با use caseهای CreatorRizz و portهای persistence/job queue
 - [x] تفکیک CreatorRizz.Infrastructure بر اساس adapterهای configuration، persistence، jobs، storage، discovery، TTS و publishing
+- [x] مرتب‌سازی solution folderهای Visual Studio: لایه‌ها زیر src و تست‌ها زیر tests
 - [~] اتصال EF Core و Npgsql به PostgreSQL — DbContext و schema آماده است؛ repositoryهای workflow هنوز in-memory هستند
 - [ ] provider واقعی AI، TTS و FFmpeg
 - [ ] React operations dashboard

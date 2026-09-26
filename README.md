@@ -49,3 +49,5 @@ Discovery اولیه RSS در `src/CreatorRizz.Infrastructure/RssDiscovery.cs` �
 وابستگی backend به سمت داخل است: `Domain ← Application ← Infrastructure/API`. API فقط درخواست HTTP را به use caseهای Application می‌سپارد و Infrastructure، portهای Application را پیاده‌سازی می‌کند.
 
 Infrastructure بر اساس نوع adapter دسته‌بندی شده است: `Configuration/`، `DependencyInjection/`، `Persistence/`، `Jobs/`، `Storage/`، `Discovery/`، `Tts/` و `Publishing/`.
+
+در Visual Studio، تمام لایه‌های runtime زیر solution folderِ `src` و پروژهٔ test زیر `tests` نمایش داده می‌شوند.
