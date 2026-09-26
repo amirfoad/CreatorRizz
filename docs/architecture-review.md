@@ -16,6 +16,7 @@
 - لایه `CreatorRizz.Application` افزوده شد؛ API دیگر مستقیماً به store یا queue Infrastructure وابسته نیست و workflow را از use case مرکزی دریافت می‌کند.
 - adapterهای Infrastructure از فایل‌های ریشه به پوشه‌های concern-based منتقل شدند؛ composition و options نیز جداگانه نگه‌داری می‌شوند.
 - EF Core/Npgsql و `CreatorRizzDbContext` به Infrastructure افزوده شدند و mapping صریح Candidate، Research، Production، Script، Asset، Review و Audit وجود دارد.
+- mappingها نام ستون PostgreSQL را صریح تعیین می‌کنند تا به convention casing وابسته نباشند.
 
 ### کار باقی‌مانده
 
