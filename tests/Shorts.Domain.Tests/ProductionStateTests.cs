@@ -162,4 +162,19 @@ public sealed class ProductionStateTests
         Assert.Throws<WorkflowRuleViolation>(() => ProductionWorkflow.BeginRendering(ProductionState.AssetsReady));
         Assert.Equal(ProductionState.Rendering, ProductionWorkflow.BeginRendering(ProductionState.RightsApproved));
     }
+
+    [Fact]
+    public void RssParserReturnsOnlyItemsWithValidLinks()
+    {
+        const string xml = """
+            <rss><channel>
+              <item><title>Valid story</title><link>https://example.com/story</link><pubDate>2026-09-26T08:00:00Z</pubDate></item>
+              <item><title>Invalid story</title><link>not a url</link></item>
+            </channel></rss>
+            """;
+        var topics = RssDiscoveryParser.Parse(xml, new Uri("https://example.com/feed.xml"));
+        var topic = Assert.Single(topics);
+        Assert.Equal("Valid story", topic.Title);
+        Assert.Equal("example.com", topic.Publisher);
+    }
 }
