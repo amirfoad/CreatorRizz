@@ -32,6 +32,15 @@
 - [x] optimistic concurrency با `If-Match`/`ETag` و concurrency token در EF Core
 - [x] lockfile و typeهای React برای عبور `npm ci` و `npm run typecheck`
 - [x] اصلاح نام solution در CI و افزودن سرویس PostgreSQL به آن
+- [x] fingerprint SHA-256 برای dedupe نام‌شناسا و index unique
+- [x] `ViralScoreWeights` با مجموع ۱۰۰ و validation در runtime و config با نام‌های ناشناخته که صدا می‌زند
+- [x] `IDiscoverySource` و `IScriptGenerator` پورت‌ها؛ `RssDiscoverySource` با allowlist و `DisabledScriptGenerator`
+- [x] research pack از حداقل دو منبع قابل‌استفاده و تفکیک facts/uncertainty
+- [x] ثبت اتمی `ScriptGeneration` با model/prompt/input references و audit
+- [x] worker discovery و research به‌صورت timer-based، بدون اعمال feed غیرمجاز
+- [x] migration جدید برای fingerprint با backfill SQL که همان domain hash تولید می‌کند و `script_generations`
+- [x] تایمینگ نامشخص asset هنوز محدود به render manifest
+- [x] lint و typecheck فرانت‌اند
 - [ ] provider واقعی AI، TTS و FFmpeg
 - [ ] React operations dashboard
 - [ ] OAuth و upload private به YouTube

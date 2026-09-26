@@ -51,6 +51,24 @@
 - `AttachAsset` علاوه بر `Asset` یک `narrativePurpose` می‌گیرد. این یک تصمیم معماری بود و در README و اسناد plan ثبت شده است.
 - هر transition حالت، یک command صریح دارد. هیچ گیتی با فراخوانی مستقیم repository دور زده نمی‌شود.
 
+### discovery و script provenance (Plan 004)
+
+- `CandidateFingerprint` هر Candidate را از عنوان و creator نرمال‌شدهٔ SHA-256 شناسایی می‌کند، نه فقط URL؛ همان داستان در دو feed با URL و نگارش متفاوت یکی محسوب می‌شود. `TopicCandidate.Fingerprint` از نوع required است و در DB unique index دارد.
+- `ViralScoreWeights` باید مجموع دقیقاً ۱۰۰ داشته باشد و در runtime هم validation شود. `ViralScore.Calculate` وزن‌ها را به عنوان پارامتر می‌گیرد تا یک signal را بتوان بدون اثر بر سایری‌ها آزمایش کرد.
+- RSS فقط recency واقعی دارد؛ بقیهٔ signalها صفر می‌مانند، چون شاید امروز داشته باشید هیچ engagement واقعی نداشته باشید و هرگز score آن با Candidateهای دارای signal واقعی قابل مقایسه نباشد.
+- `IDiscoverySource` پورت است و `DiscoveryFeedOptions.AllowedHosts` می‌گوید چه feedهایی اجازه خواندن دارند. هر feed خودش خودش را قبل از خواندن اعتبارسنجی می‌کند، به‌ویژه اگر redirect می‌خواهد به میزبانی که allowlist ندارد.
+- `PostgresCandidateRepository.RegisterDiscovered` رقابت را با گرفتن داده‌های تازه از DB و پاک کردن change tracker حل می‌کند، نه با retry نامحدود.
+- `IScriptGenerator` پورت است. `DisabledScriptGenerator` بدون مدل و بدون API key validate می‌کند و خطای قابل‌اقدام می‌دهد؛ هرگز نمی‌کوشد template را به‌صورت uncited AI تقلب کند. `ScriptDraftComposer` حذف شد چون دلیلش ناپدید شده بود.
+- `ScriptGeneration` با `ScriptVersion` در یک write ثبت می‌شود، پس `AddGeneratedScript` هیچ اثر جانبی ندارد، اما `SaveVersion` و `Save` را اجرا می‌کند تا نمایش `GetScripts` همواره واقعاً موجود باشد.
+- `ResearchPolicy` حداقل دو منبع با `ReliabilityScore >= 50` و excerpt می‌طلبد. یک پژوهش با منبع واحد هرگز pack نمی‌شود، حتی اگر یکی از آنها reliability ۱۰۰ داشته باشد.
+- یک `DiscoveryWorker` timer-based هر feed allowlisted را بازبینی می‌کند. یک `ResearchWorker` هر Candidate را بررسی می‌کند و وقتی pack آماده باشد آن را می‌سازد، بدون اینکه Candidateهای ناقص را مجبور به پردازش کند.
+- migration جدید `20260926103424_DiscoveryAndScriptProvenance` ستون `fingerprint` و جدول `script_generations` اضافه می‌کند. فیلد fingerprint به‌صورت nullable اضافه شد، سپس SQL backfill همان `CandidateFingerprint.From` را روی هر ردیف اجرا می‌کند، بعد ردیف‌های colliding با id خودشان salted می‌شوند و بعد NOT NULL index ساخته می‌شود. به همین ترتیب هیچ داده‌ای از بین نمی‌رود. backfill SQL همان hash domain را تولید می‌کند و تست `FingerprintBackfillTests` این تطابق را با رشته‌های نمونه، از جمله فارسی، تأیید می‌کند.
+- `ServiceCollectionExtensions` `ViralScoreWeights` را singleton می‌سازد، `DiscoveryOptions.Weights` را از config bind می‌کند و `ViralScoreWeightsOptions.EnsureNoUnknownKeys` وزن‌های ناشناخته را پیدا و loud صدا می‌زند تا اشتباه تایپی مثل `Engagement` به‌جای `ViewVelocity` باعث rescale خاموز هر score نشود.
+- `DiscoveryOptions.ToWeights` یک extension روی configuration است تا تست‌های domain بتوانند بدون DI واقعی config مصنوعی بسازند.
+- Workers هیچ `appsettings.json` نداشتند و startup crash می‌کردند. حالا `appsettings.json` و `appsettings.Development.json` با دیسکاوری پیکربندی‌شده هستند.
+- `ProductionEndpoints` endpointهای جدید برای `GET /productions/{id}/scripts` و `GET /productions/{id}/script-generations` اضافه کرد، و `POST /productions/{id}/scripts/draft-from-research` حالا `WorkflowRuleViolation` و `InvalidOperationException` را به‌صورت جداگانه به ۴۰۹ و ۴۰۹/۴۰۰ تبدیل می‌کند.
+- `CandidateEndpoints` `/candidates/discovery` اضافه کرد تا یک feed story را به‌صورت دستی ثبت کرد و ببینیم چه می‌شود؛ repeat هیچ خطایی نمی‌دهد بلکه candidate قبلی را برمی‌گرداند.
+
 ### کار باقی‌مانده
 
 - صف job همچنان in-memory است و در deployment باید پایدار شود.

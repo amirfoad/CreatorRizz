@@ -84,7 +84,18 @@ If-Match: "7"
 
 `GET /productions/{id}` بعد از هر تغییر نسخهٔ جدید را برمی‌گرداند. endpointهای تغییردهنده نسخهٔ جدید را در پاسخ نمی‌دهند تا هیچ جایی فرض نکند نسخه‌ها دقیقاً یکی زیاد می‌شوند.
 
-Discovery اولیه RSS در `src/CreatorRizz.Infrastructure/Discovery/RssDiscovery.cs` قرار دارد. قبل از اتصال feedهای واقعی، آن‌ها باید در allowlist عملیاتی پروژه ثبت شوند.
+Discovery اولیه RSS در `src/CreatorRizz.Infrastructure/Discovery/RssDiscovery.cs` قرار دارد. قبل از اتصال feedهای واقعی، آن‌ها باید در allowlist عملیاتی پروژه ثبت شوند. `RssDiscoverySource` هر feed را فقط پس از اعتبارسنجی allowlist خواند.
+
+### Plan 004: discovery، research pack و provenance
+
+- هر Candidate با `fingerprint` نرمال‌شدهٔ SHA-256 عنوان و creator شناسایی می‌شود، نه فقط URL؛ همان داستان در دو feed با URL و نگارش متفاوت یکی محسوب می‌شود و repeat هیچ خطایی نمی‌دود بلکه candidate قبلی را برمی‌گرداند.
+- `ViralScoreWeights` باید مجموع دقیقاً ۱۰۰ داشته باشد. هر نام ناشناختهٔ weight در config زمان startup صدا می‌زند تا اشتباه تایپی مثل `Engagement` به‌جای `ViewVelocity` همهٔ scoreها را خاموز نکند.
+- `IScriptGenerator` پورت است. `DisabledScriptGenerator` بدون مدل و بدون API key validate می‌کند و خطای قابل‌اقدام می‌دهد؛ هرگز نمی‌کوشد template را به‌صورت uncited AI تقلب کند. `ScriptDraftComposer` حذف شد چون دلیلش ناپدید شده بود.
+- `ResearchPolicy` حداقل دو منبع با `ReliabilityScore >= 50` و excerpt می‌طلبد. یک پژوهش با منبع واحد هرگز pack نمی‌شود.
+- `ScriptGeneration` با `ScriptVersion` در یک write ثبت می‌شود، پس `AddGeneratedScript` هیچ اثر جانبی ندارد، اما `SaveVersion` و `Save` را اجرا می‌کند تا `GetScripts` همواره واقعاً موجود باشد.
+- یک `DiscoveryWorker` timer-based هر feed allowlisted را بازبینی می‌کند. یک `ResearchWorker` هر Candidate را بررسی می‌کند و وقتی pack آماده باشد آن را می‌سازد، بدون اینکه Candidateهای ناقص را مجبور به پردازش کند.
+- هر `POST` تغییردهنده production باید `If-Match` داشته باشد، حتی وقتی script از research draft می‌شود. بدون آن، ۴۲۸ و بدون آن، ۴۰۹.
+- در API، `ProductionEndpoints` حالا `GET /productions/{id}/scripts` و `GET /productions/{id}/script-generations` را هم برمی‌گرداند تا provenance قابل بازبینی باشد.
 
 در API، `Program.cs` فقط composition root است. قراردادهای HTTP در `Contracts/`، endpointهای هر جریان در `Endpoints/`، middlewareها در `Middleware/` و ترجمهٔ خطاهای موردانتظار در `Results/` نگه‌داری می‌شوند.
 
