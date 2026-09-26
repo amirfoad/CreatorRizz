@@ -1,3 +1,4 @@
+using CreatorRizz.Api.Authentication;
 using CreatorRizz.Api.Contracts;
 using CreatorRizz.Api.Middleware;
 using CreatorRizz.Api.Results;
@@ -43,7 +44,7 @@ public static class ProductionEndpoints
         productions.MapPost("/{id:guid}/assets/ready", DeclareAssetsReady);
         productions.MapPost("/{id:guid}/render/complete", CompleteRendering);
         productions.MapPost("/{id:guid}/reviews/{kind}/submit", SubmitReview);
-        productions.MapPost("/{id:guid}/reviews/{kind}", DecideReview);
+        productions.MapPost("/{id:guid}/reviews/{kind}", DecideReview).RequireAuthorization(ReviewerAccess.PolicyName);
 
         return app;
     }
@@ -127,11 +128,7 @@ public static class ProductionEndpoints
     private static IResult SubmitReview(Guid id, string kind, HttpContext context, CreatorRizzWorkflow workflow) =>
         ApiResults.Execute(() => workflow.SubmitReview(id, ProductionVersionPreconditionMiddleware.ReadExpectedVersion(context), ApiResults.ParseReviewKind(kind)));
 
-    private static IResult DecideReview(Guid id, string kind, ReviewRequest request, HttpContext context, CreatorRizzWorkflow workflow)
-    {
-        var role = context.Request.Headers["X-Role"].ToString();
-        if (!string.Equals(role, "Reviewer", StringComparison.OrdinalIgnoreCase)) return HttpResults.Forbid();
-        return ApiResults.Execute(() => workflow.DecideReview(id, ProductionVersionPreconditionMiddleware.ReadExpectedVersion(context),
-            ApiResults.ParseReviewKind(kind), request.Outcome, request.ReviewerId, request.Notes));
-    }
+    private static IResult DecideReview(Guid id, string kind, ReviewRequest request, HttpContext context, CreatorRizzWorkflow workflow) =>
+        ApiResults.Execute(() => workflow.DecideReview(id, ProductionVersionPreconditionMiddleware.ReadExpectedVersion(context),
+            ApiResults.ParseReviewKind(kind), request.Outcome, ReviewerAccess.ReadId(context.User), request.Notes));
 }

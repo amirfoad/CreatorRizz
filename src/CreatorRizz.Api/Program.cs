@@ -1,4 +1,5 @@
 using CreatorRizz.Api;
+using CreatorRizz.Api.Authentication;
 using CreatorRizz.Api.Endpoints;
 using CreatorRizz.Api.Middleware;
 using CreatorRizz.Api.OpenApi;
@@ -6,7 +7,10 @@ using CreatorRizz.Application;
 using CreatorRizz.Infrastructure;
 using CreatorRizz.Infrastructure.DependencyInjection;
 using CreatorRizz.Infrastructure.Persistence;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using System.Text.Json.Serialization;
 using System.Threading.RateLimiting;
 
@@ -15,6 +19,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddCreatorRizzInfrastructure(builder.Configuration);
 builder.Services.AddScoped<CreatorRizzWorkflow>();
 builder.Services.AddCreatorRizzSwagger();
+
+builder.Services.AddCreatorRizzAuthentication(builder.Configuration);
 
 // Rights and review states travel as their exact names. Numeric enum values would let a client
 // silently ask for the most permissive status, for example RightsStatus.Owned, by sending 0.
@@ -36,11 +42,15 @@ await ApplyCreatorRizzMigrationsAsync(app);
 
 app.UseMiddleware<CorrelationIdMiddleware>();
 app.UseMiddleware<SecurityHeadersMiddleware>();
-app.UseMiddleware<ProductionVersionPreconditionMiddleware>();
 app.UseRateLimiter();
+app.UseAuthentication();
+app.UseAuthorization();
+// After authentication, so a caller without a token is told 401 rather than being walked through the
+// state machine's preconditions. The version gate is not a way to probe an endpoint you may not call.
+app.UseMiddleware<ProductionVersionPreconditionMiddleware>();
 app.UseCreatorRizzSwagger();
-app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions { Predicate = _ => false });
-app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") });
+app.MapHealthChecks("/health/live", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
+app.MapHealthChecks("/health/ready", new Microsoft.AspNetCore.Diagnostics.HealthChecks.HealthCheckOptions { Predicate = check => check.Tags.Contains("ready") }).AllowAnonymous();
 app.MapCreatorRizzEndpoints();
 app.Run();
 

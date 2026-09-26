@@ -14,4 +14,9 @@ public sealed record AttachAssetRequest(
     string? LicenseEvidence,
     byte[] Data);
 public sealed record ProductionResponse(Guid Id, ProductionState State, int Version);
-public sealed record ReviewRequest(ReviewOutcome Outcome, string ReviewerId, string? Notes);
+
+/// <summary>
+/// The reviewer is deliberately absent. It is read from the validated token, so a caller cannot record
+/// a review under someone else's name by editing a field.
+/// </summary>
+public sealed record ReviewRequest(ReviewOutcome Outcome, string? Notes);
