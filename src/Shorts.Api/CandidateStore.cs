@@ -13,6 +13,7 @@ public sealed class CandidateStore
     {
         var canonicalUrl = request.CanonicalUrl.Trim();
         if (!Uri.TryCreate(canonicalUrl, UriKind.Absolute, out _)) throw new ArgumentException("CanonicalUrl must be an absolute URL.");
+        if (string.IsNullOrWhiteSpace(request.Title)) throw new ArgumentException("Candidate title is required.");
         var candidate = new TopicCandidate { CanonicalUrl = canonicalUrl, Title = request.Title.Trim(), Creator = request.Creator, PublishedAt = request.PublishedAt, ViralScore = ViralScore.Calculate(request.Signals), State = ProductionState.Scored };
         if (!_byUrl.TryAdd(canonicalUrl, candidate)) throw new InvalidOperationException("A candidate with this canonical URL already exists.");
         return candidate;
@@ -30,6 +31,7 @@ public sealed class CandidateStore
     {
         if (!TryGet(candidateId, out _)) throw new KeyNotFoundException("Candidate was not found.");
         if (!Uri.TryCreate(request.Url, UriKind.Absolute, out _)) throw new ArgumentException("Source URL must be absolute.");
+        if (request.ReliabilityScore is < 0 or > 100) throw new ArgumentOutOfRangeException(nameof(request), "Reliability score must be between 0 and 100.");
         var sources = _sources.GetOrAdd(candidateId, _ => []);
         lock (sources) sources.Add(new SourceItem { TopicCandidateId = candidateId, Url = request.Url, Publisher = request.Publisher, Excerpt = request.Excerpt, ReliabilityScore = request.ReliabilityScore });
     }

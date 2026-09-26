@@ -10,6 +10,8 @@ CreatorRizz ابزار داخلی برای کشف سوژه، تولید روای
 
 قواعد توسعه و معماری backend در [AGENTS.md](AGENTS.md) قرار دارد.
 
+نتیجه بازبینی معماری در [Architecture Review](docs/architecture-review.md) ثبت می‌شود.
+
 ## ساختار
 
 - `src/Shorts.Api`: HTTP API و health endpoint

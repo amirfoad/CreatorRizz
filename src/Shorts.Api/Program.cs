@@ -35,8 +35,9 @@ app.MapPost("/candidates/{id:guid}/research-pack", (Guid id, CreateResearchPackR
     ExecuteWithResult(() => store.CreateResearchPack(id, request), Results.Ok));
 app.MapGet("/candidates/{id:guid}/research-pack", (Guid id, CandidateStore store) =>
     store.TryGetResearchPack(id, out var pack) && pack is not null ? Results.Ok(pack) : Results.NotFound());
-app.MapPost("/productions", (CreateProductionRequest request, ProductionStore store) =>
+app.MapPost("/productions", (CreateProductionRequest request, ProductionStore store, CandidateStore candidateStore) =>
 {
+    if (!candidateStore.TryGet(request.CandidateId, out _)) return Results.NotFound();
     var production = store.Create(request.CandidateId);
     return Results.Created($"/productions/{production.Id}", new ProductionResponse(production.Id, production.State, production.Version));
 });
@@ -117,6 +118,7 @@ static IResult ExecuteWithResult<T>(Func<T> action, Func<T, IResult> success)
 {
     try { return success(action()); }
     catch (ArgumentException exception) { return Results.BadRequest(new { error = exception.Message }); }
+    catch (WorkflowRuleViolation exception) { return Results.Conflict(new { error = exception.Message }); }
     catch (InvalidOperationException exception) { return Results.Conflict(new { error = exception.Message }); }
 }
 

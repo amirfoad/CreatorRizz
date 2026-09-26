@@ -8,6 +8,8 @@ public static class ScriptDraftComposer
 {
     public static ScriptDraft Compose(TopicCandidate candidate, ResearchPack researchPack, IReadOnlyCollection<SourceItem> sources)
     {
+        if (researchPack.TopicCandidateId != candidate.Id) throw new WorkflowRuleViolation("Research pack must belong to the candidate being drafted.");
+        if (sources.Any(source => source.TopicCandidateId != candidate.Id)) throw new WorkflowRuleViolation("All sources must belong to the candidate being drafted.");
         ResearchPolicy.EnsureSourcesAreSufficient(sources);
         var usableSources = sources.Where(source => source.ReliabilityScore >= 50 && !string.IsNullOrWhiteSpace(source.Excerpt)).ToArray();
         var hook = $"Here is what happened with {candidate.Creator ?? "this creator"}.";

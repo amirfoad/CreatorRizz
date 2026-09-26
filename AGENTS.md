@@ -64,7 +64,7 @@ Do not make the domain depend on Infrastructure, API, Worker, EF Core, HTTP clie
 
 - Tests prove observable behavior, domain invariants, policy decisions, and failure paths. Do not write tests that only verify mocks or internal call order.
 - Add regression coverage when fixing a bug.
-- Update `README.md`, `docs/task-progress.md`, and any relevant technical or brand document in the same change when behavior, setup, architecture, or project status changes.
+- Every completed task that changes code, setup, architecture, status, branding, or workflow must update `README.md`, `docs/task-progress.md`, and any relevant technical or brand document in the same commit.
 - Keep the checked items in `docs/task-progress.md` truthful. Do not mark work complete while a required provider, credential, runtime, or verification step remains unavailable.
 
 ## Change discipline
