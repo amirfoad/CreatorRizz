@@ -11,3 +11,4 @@ storage/
 outputs/
 work/
 *.user
+.vs/
