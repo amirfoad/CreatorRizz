@@ -3,4 +3,9 @@
     <ProjectReference Include="..\CreatorRizz.Domain\CreatorRizz.Domain.csproj" />
     <ProjectReference Include="..\CreatorRizz.Infrastructure\CreatorRizz.Infrastructure.csproj" />
   </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="appsettings.Development.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

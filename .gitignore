@@ -9,7 +9,6 @@ dist/
 media/
 renders/
 storage/
-outputs/
 work/
 *.user
 .vs/

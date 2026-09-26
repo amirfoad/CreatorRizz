@@ -1,20 +1,66 @@
 using CreatorRizz.Application.Abstractions;
 using CreatorRizz.Domain;
+using System.Text.Json;
 
 namespace CreatorRizz.Application;
 
 public sealed class CreatorRizzWorkflow(
     ICandidateRepository candidates,
     IProductionRepository productions,
-    IProductionJobQueue jobs)
+    IProductionJobQueue jobs,
+    IScriptGenerator scriptGenerator,
+    ViralScoreWeights viralScoreWeights)
 {
     public IReadOnlyCollection<TopicCandidate> ListCandidates() => candidates.List();
     public TopicCandidate CreateCandidate(string url, string title, string? creator, DateTimeOffset publishedAt, ViralSignals signals) => candidates.Add(url, title, creator, publishedAt, signals);
+    public TopicCandidate RegisterDiscovered(DiscoveredTopic topic) => candidates.RegisterDiscovered(topic, viralScoreWeights);
     public void AddSource(Guid candidateId, string url, string publisher, string? excerpt, int reliabilityScore) => candidates.AddSource(candidateId, url, publisher, excerpt, reliabilityScore);
     public IReadOnlyCollection<SourceItem> GetSources(Guid candidateId) => candidates.GetSources(candidateId);
     public bool CandidateExists(Guid candidateId) => candidates.TryGet(candidateId, out _);
     public ResearchPack CreateResearchPack(Guid candidateId, string summary, string factsJson, string uncertaintyJson) => candidates.CreateResearchPack(candidateId, summary, factsJson, uncertaintyJson);
     public bool TryGetResearchPack(Guid candidateId, out ResearchPack? researchPack) => candidates.TryGetResearchPack(candidateId, out researchPack);
+
+    /// <summary>
+    /// Reads a discovery source and registers everything it found. Repeats are absorbed by the
+    /// repository, so a retried discovery run neither fails nor duplicates a candidate.
+    /// </summary>
+    public async Task<IReadOnlyCollection<TopicCandidate>> DiscoverAsync(IDiscoverySource source, CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        var topics = await source.DiscoverAsync(cancellationToken);
+        return topics.Select(topic => candidates.RegisterDiscovered(topic, viralScoreWeights)).ToArray();
+    }
+
+    /// <summary>
+    /// Splits a candidate's sources into what they verify and what they leave open. A candidate without
+    /// enough usable sources is refused here, so no research pack and therefore no production can be
+    /// built on thin evidence. Returns null when a pack already exists, which keeps a retried job from
+    /// overwriting reviewed research.
+    /// </summary>
+    public ResearchPack? BuildResearchPackFromSources(Guid candidateId)
+    {
+        if (candidates.TryGetResearchPack(candidateId, out _)) return null;
+        if (!candidates.TryGet(candidateId, out var candidate) || candidate is null) throw new KeyNotFoundException("Candidate was not found.");
+        var sources = candidates.GetSources(candidateId);
+        ResearchPolicy.EnsureSourcesAreSufficient(sources);
+
+        var facts = sources
+            .Where(source => source.ReliabilityScore >= ResearchPolicy.MinimumReliabilityScore && !string.IsNullOrWhiteSpace(source.Excerpt))
+            .Select(source => new { source.Id, source.Url, source.Publisher, Fact = source.Excerpt })
+            .ToArray();
+        var uncertainty = sources
+            .Where(source => source.ReliabilityScore < ResearchPolicy.MinimumReliabilityScore || string.IsNullOrWhiteSpace(source.Excerpt))
+            .Select(source => new
+            {
+                source.Id,
+                source.Url,
+                Reason = string.IsNullOrWhiteSpace(source.Excerpt) ? "no excerpt was captured" : $"reliability score {source.ReliabilityScore} is below {ResearchPolicy.MinimumReliabilityScore}"
+            })
+            .ToArray();
+
+        var summary = $"{candidates.GetSources(candidateId).Count} sources back this story. {facts.Length} of them carry a usable fact.";
+        return candidates.CreateResearchPack(candidateId, summary, JsonSerializer.Serialize(facts), JsonSerializer.Serialize(uncertainty));
+    }
 
     public Production CreateProduction(Guid candidateId)
     {
@@ -22,20 +68,29 @@ public sealed class CreatorRizzWorkflow(
         return productions.Create(candidateId);
     }
 
-    public ScriptVersion DraftScriptFromResearch(Guid productionId, int expectedVersion)
+    /// <summary>
+    /// Writes a script through the configured generator and records what produced it. A candidate
+    /// without a research pack never reaches the generator, so no script can be written from sources
+    /// that were never verified.
+    /// </summary>
+    public async Task<ScriptVersion> DraftScriptFromResearchAsync(Guid productionId, int expectedVersion, CancellationToken cancellationToken)
     {
         var production = GetProduction(productionId);
         if (!candidates.TryGet(production.TopicCandidateId, out var candidate) || candidate is null) throw new KeyNotFoundException("Candidate was not found.");
         if (!candidates.TryGetResearchPack(candidate.Id, out var researchPack) || researchPack is null)
             throw new WorkflowRuleViolation("Research pack is required before drafting a script.");
 
-        var draft = ScriptDraftComposer.Compose(candidate, researchPack, candidates.GetSources(candidate.Id));
-        return productions.AddScript(productionId, expectedVersion, draft.Body, draft.ClaimMapJson);
+        var sources = candidates.GetSources(candidate.Id);
+        ResearchPolicy.EnsureSourcesAreSufficient(sources);
+        var generated = await scriptGenerator.GenerateAsync(
+            new ScriptGenerationRequest(productionId, candidate.Id, candidate.Title, researchPack.Summary, sources), cancellationToken);
+        return productions.AddGeneratedScript(productionId, expectedVersion, generated, sources);
     }
 
     public bool TryGetProduction(Guid productionId, out Production? production) => productions.TryGet(productionId, out production);
     public IReadOnlyCollection<Asset> GetAssets(Guid productionId) => productions.GetAssets(productionId);
     public IReadOnlyCollection<ScriptVersion> GetScripts(Guid productionId) => productions.GetScripts(productionId);
+    public IReadOnlyCollection<ScriptGeneration> GetScriptGenerations(Guid productionId) => productions.GetScriptGenerations(productionId);
     public ScriptVersion AddScript(Guid productionId, int expectedVersion, string body, string claimMapJson) => productions.AddScript(productionId, expectedVersion, body, claimMapJson);
     public IReadOnlyCollection<AuditEvent> GetAuditEvents(Guid productionId) => productions.GetAuditEvents(productionId);
     public void AttachAsset(Guid productionId, int expectedVersion, Asset asset, string narrativePurpose) =>

@@ -25,6 +25,11 @@ public static class CandidateEndpoints
         candidates.MapGet("/{id:guid}/research-pack", (Guid id, CreatorRizzWorkflow workflow) =>
             workflow.TryGetResearchPack(id, out var pack) && pack is not null ? HttpResults.Ok(pack) : HttpResults.NotFound());
 
+        // Lets a feed be replayed by hand and shows what discovery would do with a story, without
+        // waiting for the next poll. Repeats return the stored candidate instead of failing.
+        candidates.MapPost("/discovery", (RegisterDiscoveredTopicRequest request, CreatorRizzWorkflow workflow) =>
+            ApiResults.ExecuteWithResult(() => workflow.RegisterDiscovered(request.ToDiscoveredTopic()), HttpResults.Ok));
+
         return app;
     }
 }

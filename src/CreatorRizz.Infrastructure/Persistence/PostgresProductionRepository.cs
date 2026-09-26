@@ -113,16 +113,48 @@ public sealed class PostgresProductionRepository(CreatorRizzDbContext database) 
     {
         var production = GetRequired(id, expectedVersion);
         ResearchPolicy.EnsureScriptHasClaimMap(body, claimMapJson);
+        var script = AddScriptVersion(id, body, claimMapJson);
+        production.State = ProductionState.ScriptDraft;
+        production.Version++;
+        AddAudit("system", "ScriptVersionCreated", "Production", id, script.Version.ToString());
+        SaveVersion(id, expectedVersion);
+        return script;
+    }
+
+    public ScriptVersion AddGeneratedScript(Guid id, int expectedVersion, GeneratedScript script, IReadOnlyCollection<SourceItem> inputs)
+    {
+        var production = GetRequired(id, expectedVersion);
+        ArgumentNullException.ThrowIfNull(script);
+        if (string.IsNullOrWhiteSpace(script.ModelId)) throw new ArgumentException("A generated script must record the model that wrote it.", nameof(script));
+        if (string.IsNullOrWhiteSpace(script.PromptVersion)) throw new ArgumentException("A generated script must record the prompt version.", nameof(script));
+        ResearchPolicy.EnsureScriptHasClaimMap(script.Body, script.ClaimMapJson);
+
+        var references = inputs.Select(source => new { source.Id, source.Url, source.Publisher, source.ReliabilityScore }).ToArray();
+        var stored = AddScriptVersion(id, script.Body, script.ClaimMapJson);
+        database.ScriptGenerations.Add(new ScriptGeneration
+        {
+            ProductionId = id,
+            ModelId = script.ModelId,
+            PromptVersion = script.PromptVersion,
+            InputReferencesJson = JsonSerializer.Serialize(references),
+            Body = script.Body,
+            ClaimMapJson = script.ClaimMapJson
+        });
+        production.State = ProductionState.ScriptDraft;
+        production.Version++;
+        AddAudit("system", "ScriptGenerated", "Production", id, $"{script.ModelId}@{script.PromptVersion}");
+        SaveVersion(id, expectedVersion);
+        return stored;
+    }
+
+    private ScriptVersion AddScriptVersion(Guid id, string body, string claimMapJson)
+    {
         var nextVersion = (database.ScriptVersions
             .Where(script => script.ProductionId == id)
             .Select(script => (int?)script.Version)
             .Max() ?? 0) + 1;
         var script = new ScriptVersion { ProductionId = id, Version = nextVersion, Body = body, ClaimMapJson = claimMapJson };
         database.ScriptVersions.Add(script);
-        production.State = ProductionState.ScriptDraft;
-        production.Version++;
-        AddAudit("system", "ScriptVersionCreated", "Production", id, script.Version.ToString());
-        SaveVersion(id, expectedVersion);
         return script;
     }
 
@@ -150,6 +182,12 @@ public sealed class PostgresProductionRepository(CreatorRizzDbContext database) 
         AddAudit("system", "RenderQueued", "Production", id);
         SaveVersion(id, expectedVersion);
     }
+
+    public IReadOnlyCollection<ScriptGeneration> GetScriptGenerations(Guid id) => database.ScriptGenerations
+        .AsNoTracking()
+        .Where(generation => generation.ProductionId == id)
+        .OrderBy(generation => generation.CreatedAt)
+        .ToArray();
 
     public IReadOnlyCollection<AuditEvent> GetAuditEvents(Guid productionId) => database.AuditEvents
         .AsNoTracking()

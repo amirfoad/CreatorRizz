@@ -1,9 +1,13 @@
+using CreatorRizz.Application.Abstractions;
 using CreatorRizz.Domain;
 using CreatorRizz.Infrastructure;
+using CreatorRizz.Infrastructure.Configuration;
 using CreatorRizz.Infrastructure.Discovery;
 using CreatorRizz.Infrastructure.Jobs;
+using CreatorRizz.Infrastructure.Scripting;
 using CreatorRizz.Infrastructure.Storage;
 using CreatorRizz.Infrastructure.Tts;
+using Microsoft.Extensions.Configuration;
 using Xunit;
 
 namespace CreatorRizz.Domain.Tests;
@@ -40,6 +44,33 @@ public sealed class ProductionStateTests
         var score = ViralScore.Calculate(new ViralSignals(100, 100, 100, 100, 100, 100));
         Assert.Equal(100, score);
         Assert.Equal(35, ViralScore.Calculate(new ViralSignals(100, 0, 0, 0, 0, 0)));
+    }
+
+    [Fact]
+    public void ViralScoreWeightsHaveToTotalOneHundredSoAScoreCannotBeSilentlyRescaled()
+    {
+        var weights = ViralScoreWeights.Version1;
+        Assert.Equal(100m, weights.Total);
+
+        var allSignals = new ViralSignals(100, 100, 100, 100, 100, 100);
+        var recencyOnly = new ViralScoreWeights(0m, 0m, 100m, 0m, 0m, 0m);
+        Assert.Equal(allSignals.Recency, ViralScore.Calculate(allSignals, recencyOnly));
+
+        var broken = weights with { Engagement = 5m };
+        var failure = Assert.Throws<ArgumentException>(() => broken.EnsureValid());
+        Assert.Contains("must total 100", failure.Message);
+        Assert.Throws<ArgumentOutOfRangeException>(() => (weights with { Recency = -1m }).EnsureValid());
+    }
+
+    [Fact]
+    public void TheFingerprintSeesTheSameStoryBehindDifferentUrlsAndFormatting()
+    {
+        var first = CandidateFingerprint.From("  Meteor   Hits  Coastal Town! ", "Example News");
+        var second = CandidateFingerprint.From("meteor hits coastal town", "example news");
+        Assert.Equal(first, second);
+
+        Assert.NotEqual(first, CandidateFingerprint.From("Meteor Hits Coastal Town", "Another Publisher"));
+        Assert.NotEqual(first, CandidateFingerprint.From("Meteor Hits Coastal Town", null));
     }
 
     [Fact]
@@ -84,18 +115,25 @@ public sealed class ProductionStateTests
     }
 
     [Fact]
-    public void DraftComposerCreatesACitedScriptFromResearch()
+    public void TheDefaultGeneratorRefusesInsteadOfReturningUncitedText()
     {
-        var candidate = new TopicCandidate { CanonicalUrl = "https://example.com/video", Title = "A story", Creator = "Creator", PublishedAt = DateTimeOffset.UtcNow };
-        var pack = new ResearchPack { TopicCandidateId = candidate.Id, Summary = "The event has been verified.", FactsJson = "[]", UncertaintyJson = "[]" };
-        var sources = new[]
-        {
-            new SourceItem { TopicCandidateId = candidate.Id, Url = "https://example.com/source-1", Publisher = "One", Excerpt = "First verified fact.", ReliabilityScore = 80 },
-            new SourceItem { TopicCandidateId = candidate.Id, Url = "https://example.com/source-2", Publisher = "Two", Excerpt = "Second verified fact.", ReliabilityScore = 75 }
-        };
-        var draft = ScriptDraftComposer.Compose(candidate, pack, sources);
-        Assert.Contains("source-1", draft.ClaimMapJson);
-        Assert.Contains("The event has been verified.", draft.Body);
+        IScriptGenerator generator = new DisabledScriptGenerator();
+        var request = new ScriptGenerationRequest(Guid.NewGuid(), Guid.NewGuid(), "A story", "Two sources verify this.",
+        [
+            new SourceItem { TopicCandidateId = Guid.NewGuid(), Url = "https://example.com/1", Publisher = "One", Excerpt = "Fact", ReliabilityScore = 80 },
+            new SourceItem { TopicCandidateId = Guid.NewGuid(), Url = "https://example.com/2", Publisher = "Two", Excerpt = "Second fact", ReliabilityScore = 80 }
+        ]);
+
+        var failure = Assert.Throws<InvalidOperationException>(() => generator.GenerateAsync(request, CancellationToken.None).GetAwaiter().GetResult());
+        Assert.Contains("No script generator is configured", failure.Message);
+    }
+
+    [Fact]
+    public void TheDefaultGeneratorStillRejectsAnEmptyRequestBeforeRefusing()
+    {
+        IScriptGenerator generator = new DisabledScriptGenerator();
+        var noSummary = new ScriptGenerationRequest(Guid.NewGuid(), Guid.NewGuid(), "A story", "  ", []);
+        Assert.Throws<ArgumentException>(() => generator.GenerateAsync(noSummary, CancellationToken.None).GetAwaiter().GetResult());
     }
 
     [Fact]
@@ -234,5 +272,52 @@ public sealed class ProductionStateTests
         var topic = Assert.Single(topics);
         Assert.Equal("Valid story", topic.Title);
         Assert.Equal("example.com", topic.Publisher);
+    }
+
+    [Fact]
+    public void ConfiguredWeightsReplaceTheDefaultsInsteadOfFallingBackToThem()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Discovery:Weights:ViewVelocity"] = "50",
+            ["Discovery:Weights:Engagement"] = "20",
+            ["Discovery:Weights:Recency"] = "15",
+            ["Discovery:Weights:CreatorRelevance"] = "5",
+            ["Discovery:Weights:CrossSource"] = "5",
+            ["Discovery:Weights:StoryPotential"] = "5"
+        }).Build();
+
+        var weights = configuration.ToWeights();
+
+        Assert.Equal(100m, weights.Total);
+        Assert.Equal(50m, weights.ViewVelocity);
+        Assert.Equal(5m, weights.StoryPotential);
+        Assert.Equal(50m, ViralScore.Calculate(new ViralSignals(100, 0, 0, 0, 0, 0), weights));
+    }
+
+    [Fact]
+    public void AMisspelledWeightNameFailsInsteadOfSilentlyKeepingTheDefaults()
+    {
+        var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Discovery:Weights:Engagement"] = "50",
+            ["Discovery:Weights:Novelty"] = "20"
+        }).Build();
+
+        var failure = Assert.Throws<InvalidOperationException>(() => configuration.ToWeights());
+
+        Assert.Contains("Novelty", failure.Message);
+        Assert.Contains("ViewVelocity", failure.Message);
+    }
+
+    [Fact]
+    public void AFeedMustListItsOwnHostBeforeItCanBeFetched()
+    {
+        var allowed = new DiscoveryFeedOptions { Name = "Example", Url = "https://news.example.com/feed.xml", AllowedHosts = ["news.example.com"] };
+        allowed.EnsureAllowed();
+
+        var blocked = new DiscoveryFeedOptions { Name = "Example", Url = "https://news.example.com/feed.xml", AllowedHosts = ["other.example.com"] };
+        var failure = Assert.Throws<InvalidOperationException>(blocked.EnsureAllowed);
+        Assert.Contains("news.example.com", failure.Message);
     }
 }

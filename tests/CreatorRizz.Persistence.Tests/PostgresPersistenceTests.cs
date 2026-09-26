@@ -38,15 +38,101 @@ public sealed class PostgresPersistenceTests(PostgresFixture fixture)
     }
 
     [Fact]
-    public void TheSameCanonicalUrlCannotBeRegisteredTwice()
+    public void RegisteringTheSameStoryByHandIsRefusedAndPointsAtTheStoredCandidate()
     {
         var url = $"https://example.com/story-{Guid.NewGuid():N}";
-        var first = AddCandidate(url);
-        Assert.NotEqual(Guid.Empty, first.Id);
+        var title = $"A verified story {Guid.NewGuid():N}";
+        var signals = StrongSignals;
 
-        var failure = Assert.Throws<InvalidOperationException>(() => AddCandidate(url));
-        Assert.Contains("IX_topic_candidates_canonical_url", failure.Message);
+        using (var context = fixture.CreateContext())
+            new PostgresCandidateRepository(context, ViralScoreWeights.Version1).Add(url, title, "Creator", DateTimeOffset.UtcNow, signals);
+
+        using var again = fixture.CreateContext();
+        var failure = Assert.Throws<InvalidOperationException>(() =>
+            new PostgresCandidateRepository(again, ViralScoreWeights.Version1).Add(url, title, "Creator", DateTimeOffset.UtcNow, signals));
+
+        Assert.Contains("already registered", failure.Message);
+        Assert.Contains("Discovery registers repeats instead of failing", failure.Message);
         Assert.Single(CountCandidates(url));
+    }
+
+    [Fact]
+    public void DiscoveryRegistersARepeatedStoryOnlyOnce()
+    {
+        var topic = new DiscoveredTopic(
+            "Meteor Hits Coastal Town",
+            $"https://feed.example.com/meteor-{Guid.NewGuid():N}",
+            "Example News",
+            DateTimeOffset.UtcNow,
+            new ViralSignals(0m, 0m, 90m, 0m, 0m, 0m));
+
+        var first = RegisterDiscovered(topic);
+        var repeat = RegisterDiscovered(topic);
+        var sameStoryAnotherUrl = RegisterDiscovered(topic with
+        {
+            CanonicalUrl = $"https://other.example.com/meteor-{Guid.NewGuid():N}",
+            Title = "  meteor   hits coastal TOWN  "
+        });
+
+        Assert.Equal(first.Id, repeat.Id);
+        Assert.Equal(first.Id, sameStoryAnotherUrl.Id);
+        Assert.Equal(1, CountCandidatesWithFingerprint(first.Fingerprint));
+    }
+
+    [Fact]
+    public void DiscoveryScoresARecencyOnlySignalWithoutInventingEngagement()
+    {
+        var topic = new DiscoveredTopic(
+            "An Old Story",
+            $"https://feed.example.com/old-{Guid.NewGuid():N}",
+            "Example News",
+            DateTimeOffset.UtcNow.AddDays(-15),
+            new ViralSignals(0m, 0m, 50m, 0m, 0m, 0m));
+
+        var candidate = RegisterDiscovered(topic);
+
+        Assert.Equal(7.5m, candidate.ViralScore);
+    }
+
+    [Fact]
+    public void AGeneratedScriptIsStoredWithTheModelAndSourcesThatProducedIt()
+    {
+        var production = CreateProductionWithScript();
+        AddVerifiedSources(production);
+        var sources = GetSourcesFor(production);
+        Assert.Equal(2, sources.Count);
+        var generated = new GeneratedScript(
+            "The storm made landfall at dawn.",
+            "{\"claim\":\"storm\",\"sourceId\":\"abc\"}",
+            "test-model-v1",
+            "prompt-v3");
+
+        var script = AddGeneratedScript(production, generated, sources);
+
+        var stored = Assert.Single(GetScriptGenerations(production));
+        Assert.Equal("test-model-v1", stored.ModelId);
+        Assert.Equal("prompt-v3", stored.PromptVersion);
+        Assert.Equal(generated.Body, stored.Body);
+        Assert.Contains("https://example.com/source-1", stored.InputReferencesJson);
+        Assert.Contains("ScriptGenerated", GetAuditActions(production));
+        Assert.Equal(script.Version, GetScripts(production).Last().Version);
+    }
+
+    [Fact]
+    public void AGeneratedScriptWithoutItsProvenanceIsRefused()
+    {
+        var production = CreateProductionWithScript();
+        AddVerifiedSources(production);
+        var version = GetVersion(production);
+        var sources = GetSourcesFor(production);
+        var noModel = new GeneratedScript("A body.", "{\"claim\":\"storm\"}", "  ", "prompt-v3");
+        var noPrompt = new GeneratedScript("A body.", "{\"claim\":\"storm\"}", "test-model-v1", "  ");
+
+        Mutate(repository => Assert.Throws<ArgumentException>(() => repository.AddGeneratedScript(production, version, noModel, sources)));
+        Mutate(repository => Assert.Throws<ArgumentException>(() => repository.AddGeneratedScript(production, version, noPrompt, sources)));
+
+        Assert.Empty(GetScriptGenerations(production));
+        Assert.DoesNotContain("ScriptGenerated", GetAuditActions(production));
     }
 
     [Fact]
@@ -217,6 +303,47 @@ public sealed class PostgresPersistenceTests(PostgresFixture fixture)
         return production.Id;
     }
 
+    private TopicCandidate RegisterDiscovered(DiscoveredTopic topic)
+    {
+        using var context = fixture.CreateContext();
+        return new PostgresCandidateRepository(context, ViralScoreWeights.Version1).RegisterDiscovered(topic, ViralScoreWeights.Version1);
+    }
+
+    private ScriptVersion AddGeneratedScript(Guid production, GeneratedScript generated, IReadOnlyCollection<SourceItem> sources)
+    {
+        using var context = fixture.CreateContext();
+        return new PostgresProductionRepository(context).AddGeneratedScript(production, GetVersion(production), generated, sources);
+    }
+
+    private IReadOnlyCollection<SourceItem> GetSourcesFor(Guid production)
+    {
+        using var context = fixture.CreateContext();
+        return context.SourceItems.AsNoTracking()
+            .Where(source => source.TopicCandidateId == GetCandidateId(production))
+            .ToArray();
+    }
+
+    private void AddVerifiedSources(Guid production)
+    {
+        var candidateId = GetCandidateId(production);
+        foreach (var (url, publisher, excerpt) in new[]
+        {
+            ("https://example.com/source-1", "One", "The first verified fact."),
+            ("https://example.com/source-2", "Two", "The second verified fact.")
+        })
+        {
+            using var context = fixture.CreateContext();
+            new PostgresCandidateRepository(context, ViralScoreWeights.Version1)
+                .AddSource(candidateId, url, publisher, excerpt, 80);
+        }
+    }
+
+    private Guid GetCandidateId(Guid production)
+    {
+        using var context = fixture.CreateContext();
+        return context.Productions.AsNoTracking().Single(item => item.Id == production).TopicCandidateId;
+    }
+
     private Guid CreateProductionWithApprovedRights()
     {
         var production = CreateProductionWithScript();
@@ -231,11 +358,15 @@ public sealed class PostgresPersistenceTests(PostgresFixture fixture)
         return production;
     }
 
+    /// <summary>
+    /// The title has to be unique per call, because a candidate is now identified by its headline
+    /// fingerprint as well as its URL. Reusing one title across tests collides on that index.
+    /// </summary>
     private TopicCandidate AddCandidate(string url)
     {
         using var context = fixture.CreateContext();
-        return new PostgresCandidateRepository(context)
-            .Add(url, "A verified story", "Creator", DateTimeOffset.UtcNow, StrongSignals);
+        return new PostgresCandidateRepository(context, ViralScoreWeights.Version1)
+            .Add(url, $"A verified story {Guid.NewGuid():N}", "Creator", DateTimeOffset.UtcNow, StrongSignals);
     }
 
     private void AddScriptVersion(Guid production, string body) =>
@@ -297,6 +428,18 @@ public sealed class PostgresPersistenceTests(PostgresFixture fixture)
     {
         using var context = fixture.CreateContext();
         return context.TopicCandidates.Where(candidate => candidate.CanonicalUrl == url).Select(candidate => candidate.Id).ToArray();
+    }
+
+    private int CountCandidatesWithFingerprint(string fingerprint)
+    {
+        using var context = fixture.CreateContext();
+        return context.TopicCandidates.Count(candidate => candidate.Fingerprint == fingerprint);
+    }
+
+    private IReadOnlyCollection<ScriptGeneration> GetScriptGenerations(Guid production)
+    {
+        using var context = fixture.CreateContext();
+        return new PostgresProductionRepository(context).GetScriptGenerations(production);
     }
 
     private IReadOnlyCollection<ScriptVersion> GetScripts(Guid production)

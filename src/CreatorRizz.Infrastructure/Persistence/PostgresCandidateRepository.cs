@@ -6,19 +6,85 @@ using System.Text.Json;
 namespace CreatorRizz.Infrastructure.Persistence;
 
 /// <summary>PostgreSQL implementation of the candidate and research persistence port.</summary>
-public sealed class PostgresCandidateRepository(CreatorRizzDbContext database) : ICandidateRepository
+public sealed class PostgresCandidateRepository(CreatorRizzDbContext database, ViralScoreWeights viralScoreWeights) : ICandidateRepository
 {
     public TopicCandidate Add(string canonicalUrl, string title, string? creator, DateTimeOffset publishedAt, ViralSignals signals)
     {
-        if (string.IsNullOrWhiteSpace(canonicalUrl)) throw new ArgumentException("Canonical URL is required.", nameof(canonicalUrl));
-        canonicalUrl = canonicalUrl.Trim();
-        if (!Uri.TryCreate(canonicalUrl, UriKind.Absolute, out _)) throw new ArgumentException("CanonicalUrl must be an absolute URL.");
-        if (string.IsNullOrWhiteSpace(title)) throw new ArgumentException("Candidate title is required.");
+        var url = NormalizeUrl(canonicalUrl);
+        RequireTitle(title);
+        var fingerprint = CandidateFingerprint.From(title, creator);
+        var existing = FindByUrlOrFingerprint(url, fingerprint);
+        if (existing is not null)
+            throw new InvalidOperationException(
+                $"This story is already registered as candidate {existing.Id} at '{existing.CanonicalUrl}'. Discovery registers repeats instead of failing.");
 
-        var candidate = new TopicCandidate { CanonicalUrl = canonicalUrl, Title = title.Trim(), Creator = creator, PublishedAt = publishedAt, ViralScore = ViralScore.Calculate(signals), State = ProductionState.Scored };
+        var candidate = new TopicCandidate
+        {
+            CanonicalUrl = url,
+            Title = title.Trim(),
+            Creator = creator,
+            Fingerprint = fingerprint,
+            PublishedAt = publishedAt,
+            ViralScore = ViralScore.Calculate(signals, viralScoreWeights),
+            State = ProductionState.Scored
+        };
         database.TopicCandidates.Add(candidate);
         database.SaveWorkflowChanges();
         return candidate;
+    }
+
+    public TopicCandidate RegisterDiscovered(DiscoveredTopic topic, ViralScoreWeights weights)
+    {
+        ArgumentNullException.ThrowIfNull(topic);
+        var url = NormalizeUrl(topic.CanonicalUrl);
+        RequireTitle(topic.Title);
+        var fingerprint = CandidateFingerprint.From(topic.Title, topic.Creator);
+
+        var existing = FindByUrlOrFingerprint(url, fingerprint);
+        if (existing is not null) return existing;
+
+        var candidate = new TopicCandidate
+        {
+            CanonicalUrl = url,
+            Title = topic.Title.Trim(),
+            Creator = topic.Creator,
+            Fingerprint = fingerprint,
+            PublishedAt = topic.PublishedAt,
+            ViralScore = ViralScore.Calculate(topic.Signals, weights),
+            State = ProductionState.Scored
+        };
+        database.TopicCandidates.Add(candidate);
+        try
+        {
+            database.SaveWorkflowChanges();
+        }
+        catch (InvalidOperationException)
+        {
+            // A concurrent discovery run registered the same story between the check and the write.
+            // Losing that race is the expected outcome of polling, not a failure.
+            database.ChangeTracker.Clear();
+            var winner = FindByUrlOrFingerprint(url, fingerprint);
+            if (winner is null) throw;
+            return winner;
+        }
+        return candidate;
+    }
+
+    private TopicCandidate? FindByUrlOrFingerprint(string canonicalUrl, string fingerprint) =>
+        database.TopicCandidates.AsNoTracking()
+            .SingleOrDefault(item => item.CanonicalUrl == canonicalUrl || item.Fingerprint == fingerprint);
+
+    private static string NormalizeUrl(string canonicalUrl)
+    {
+        if (string.IsNullOrWhiteSpace(canonicalUrl)) throw new ArgumentException("Canonical URL is required.", nameof(canonicalUrl));
+        var url = canonicalUrl.Trim();
+        if (!Uri.TryCreate(url, UriKind.Absolute, out _)) throw new ArgumentException("CanonicalUrl must be an absolute URL.", nameof(canonicalUrl));
+        return url;
+    }
+
+    private static void RequireTitle(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title)) throw new ArgumentException("Candidate title is required.", nameof(title));
     }
 
     public bool TryGet(Guid id, out TopicCandidate? candidate)

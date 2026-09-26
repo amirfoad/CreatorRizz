@@ -10,6 +10,7 @@ public sealed class CreatorRizzDbContext(DbContextOptions<CreatorRizzDbContext> 
     public DbSet<ResearchPack> ResearchPacks => Set<ResearchPack>();
     public DbSet<Production> Productions => Set<Production>();
     public DbSet<ScriptVersion> ScriptVersions => Set<ScriptVersion>();
+    public DbSet<ScriptGeneration> ScriptGenerations => Set<ScriptGeneration>();
     public DbSet<Asset> Assets => Set<Asset>();
     public DbSet<AssetUsage> AssetUsages => Set<AssetUsage>();
     public DbSet<ReviewDecision> ReviewDecisions => Set<ReviewDecision>();
@@ -25,11 +26,13 @@ public sealed class CreatorRizzDbContext(DbContextOptions<CreatorRizzDbContext> 
             entity.Property(item => item.CanonicalUrl).HasColumnName("canonical_url").HasMaxLength(2000);
             entity.Property(item => item.Title).HasColumnName("title").HasMaxLength(500);
             entity.Property(item => item.Creator).HasColumnName("creator").HasMaxLength(250);
+            entity.Property(item => item.Fingerprint).HasColumnName("fingerprint").HasMaxLength(64);
             entity.Property(item => item.PublishedAt).HasColumnName("published_at");
             entity.Property(item => item.CreatedAt).HasColumnName("created_at");
             entity.Property(item => item.ViralScore).HasColumnName("viral_score").HasPrecision(5, 2);
             entity.Property(item => item.State).HasColumnName("state").HasConversion<string>().HasMaxLength(50);
             entity.HasIndex(item => item.CanonicalUrl).IsUnique();
+            entity.HasIndex(item => item.Fingerprint).IsUnique();
         });
 
         modelBuilder.Entity<SourceItem>(entity =>
@@ -87,6 +90,22 @@ public sealed class CreatorRizzDbContext(DbContextOptions<CreatorRizzDbContext> 
             entity.Property(item => item.ClaimMapJson).HasColumnName("claim_map_json").HasColumnType("jsonb");
             entity.Property(item => item.CreatedAt).HasColumnName("created_at");
             entity.HasIndex(item => new { item.ProductionId, item.Version }).IsUnique();
+            entity.HasOne<Production>().WithMany().HasForeignKey(item => item.ProductionId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ScriptGeneration>(entity =>
+        {
+            entity.ToTable("script_generations");
+            entity.HasKey(item => item.Id);
+            entity.Property(item => item.Id).HasColumnName("id");
+            entity.Property(item => item.ProductionId).HasColumnName("production_id");
+            entity.Property(item => item.ModelId).HasColumnName("model_id").HasMaxLength(200);
+            entity.Property(item => item.PromptVersion).HasColumnName("prompt_version").HasMaxLength(100);
+            entity.Property(item => item.InputReferencesJson).HasColumnName("input_references_json").HasColumnType("jsonb");
+            entity.Property(item => item.Body).HasColumnName("body");
+            entity.Property(item => item.ClaimMapJson).HasColumnName("claim_map_json").HasColumnType("jsonb");
+            entity.Property(item => item.CreatedAt).HasColumnName("created_at");
+            entity.HasIndex(item => new { item.ProductionId, item.CreatedAt });
             entity.HasOne<Production>().WithMany().HasForeignKey(item => item.ProductionId).OnDelete(DeleteBehavior.Restrict);
         });
 

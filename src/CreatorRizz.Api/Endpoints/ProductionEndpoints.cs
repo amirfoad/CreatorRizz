@@ -18,6 +18,7 @@ public static class ProductionEndpoints
         productions.MapGet("/{id:guid}", Get);
         productions.MapGet("/{id:guid}/assets", GetAssets);
         productions.MapGet("/{id:guid}/scripts", GetScripts);
+        productions.MapGet("/{id:guid}/script-generations", GetScriptGenerations);
         productions.MapPost("/{id:guid}/scripts", CreateScript);
         productions.MapPost("/{id:guid}/tts", QueueTts);
         productions.MapPost("/{id:guid}/render", QueueRender);
@@ -40,10 +41,18 @@ public static class ProductionEndpoints
         return production;
     }
 
-    private static IResult DraftFromResearch(Guid id, HttpContext context, CreatorRizzWorkflow workflow) =>
-        ApiResults.ExecuteWithResult(
-            () => workflow.DraftScriptFromResearch(id, ProductionVersionPreconditionMiddleware.ReadExpectedVersion(context)),
-            HttpResults.Ok);
+    private static async Task<IResult> DraftFromResearch(Guid id, HttpContext context, CreatorRizzWorkflow workflow, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var script = await workflow.DraftScriptFromResearchAsync(id, ProductionVersionPreconditionMiddleware.ReadExpectedVersion(context), cancellationToken);
+            return HttpResults.Ok(script);
+        }
+        catch (KeyNotFoundException) { return HttpResults.NotFound(); }
+        catch (ArgumentException exception) { return HttpResults.BadRequest(new { error = exception.Message }); }
+        catch (WorkflowRuleViolation exception) { return HttpResults.Conflict(new { error = exception.Message }); }
+        catch (InvalidOperationException exception) { return HttpResults.Conflict(new { error = exception.Message }); }
+    }
 
     private static IResult Get(Guid id, HttpContext context, CreatorRizzWorkflow workflow)
     {
@@ -57,6 +66,9 @@ public static class ProductionEndpoints
 
     private static IResult GetScripts(Guid id, CreatorRizzWorkflow workflow) =>
         workflow.TryGetProduction(id, out _) ? HttpResults.Ok(workflow.GetScripts(id)) : HttpResults.NotFound();
+
+    private static IResult GetScriptGenerations(Guid id, CreatorRizzWorkflow workflow) =>
+        workflow.TryGetProduction(id, out _) ? HttpResults.Ok(workflow.GetScriptGenerations(id)) : HttpResults.NotFound();
 
     private static IResult CreateScript(Guid id, CreateScriptRequest request, HttpContext context, CreatorRizzWorkflow workflow) =>
         ApiResults.ExecuteWithResult(
