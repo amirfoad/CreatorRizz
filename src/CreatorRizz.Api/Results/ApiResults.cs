@@ -10,6 +10,13 @@ internal static class ApiResults
         ? kind
         : throw new WorkflowRuleViolation("Unknown review kind.");
 
+    /// <summary>
+    /// A filter the caller named does not exist. This is 400, not the 404 an unknown production gets:
+    /// the request is well-formed but asks about something this service does not have.
+    /// </summary>
+    public static IResult UnknownFilter(string filter, string value) =>
+        HttpResults.BadRequest(new { error = $"Unknown {filter} '{value}'.", filter });
+
     public static IResult Execute(Action action)
     {
         try { action(); return HttpResults.NoContent(); }

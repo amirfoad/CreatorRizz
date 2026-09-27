@@ -89,10 +89,8 @@ public sealed class ReviewerGateTests
     [Fact]
     public void StartupRefusesWhenNoTokenSourceIsConfigured()
     {
-        var services = new ServiceCollection().AddLogging();
-        services.AddCreatorRizzAuthentication(ConfigurationWith(("Authentication:Schemes:Bearer:Authority", "")));
-
-        var failure = Assert.Throws<OptionsValidationException>(() => BearerOptions(services));
+        var failure = Assert.Throws<OptionsValidationException>(() => BearerOptions(
+            ("Authentication:Schemes:Bearer:Authority", "")));
 
         Assert.Contains("No token source is configured", failure.Message);
     }
@@ -100,12 +98,9 @@ public sealed class ReviewerGateTests
     [Fact]
     public void StartupRefusesWhenTheAudienceIsMissing()
     {
-        var services = new ServiceCollection().AddLogging();
-        services.AddCreatorRizzAuthentication(ConfigurationWith(
+        var failure = Assert.Throws<OptionsValidationException>(() => BearerOptions(
             ("Authentication:Schemes:Bearer:Authority", "https://login.example.com"),
             ("Authentication:Schemes:Bearer:Audience", "")));
-
-        var failure = Assert.Throws<OptionsValidationException>(() => BearerOptions(services));
 
         Assert.Contains("Audience", failure.Message);
     }
@@ -113,31 +108,39 @@ public sealed class ReviewerGateTests
     [Fact]
     public void SuppliedSigningKeysAreAcceptedAsATokenSource()
     {
-        var services = new ServiceCollection().AddLogging();
-        services.AddCreatorRizzAuthentication(ConfigurationWith(
+        Assert.Equal("creatorrizz-api", BearerOptions(
             ("Authentication:Schemes:Bearer:Audience", "creatorrizz-api"),
-            ("Authentication:Schemes:Bearer:TokenValidationParameters:IssuerSigningKeys:0:Key", "a-signing-key")));
-
-        Assert.Equal("creatorrizz-api", BearerOptions(services).Audience);
+            ("Authentication:Schemes:Bearer:TokenValidationParameters:IssuerSigningKeys:0:Key", "a-signing-key")).Audience);
     }
 
     /// <summary>
     /// The per-scheme instance, which is the one the JWT handler reads. The unnamed instance is a
     /// different object and would happily pass validation over an empty configuration.
     /// </summary>
-    private static JwtBearerOptions BearerOptions(IServiceCollection services) =>
-        services.BuildServiceProvider().GetRequiredService<IOptionsMonitor<JwtBearerOptions>>().Get(JwtBearerDefaults.AuthenticationScheme);
+    private static JwtBearerOptions BearerOptions(params (string Key, string? Value)[] values) =>
+        AuthenticationServices(values).BuildServiceProvider()
+            .GetRequiredService<IOptionsMonitor<JwtBearerOptions>>().Get(JwtBearerDefaults.AuthenticationScheme);
 
     private static IAuthorizationService BuildAuthorization() =>
         BuildProvider().GetRequiredService<IAuthorizationService>();
 
-    private static ServiceProvider BuildProvider()
-    {
-        var services = new ServiceCollection().AddLogging();
-        services.AddCreatorRizzAuthentication(ConfigurationWith(
+    private static ServiceProvider BuildProvider() =>
+        AuthenticationServices(
             ("Authentication:Schemes:Bearer:Authority", "https://login.example.com"),
-            ("Authentication:Schemes:Bearer:Audience", "creatorrizz-api")));
-        return services.BuildServiceProvider();
+            ("Authentication:Schemes:Bearer:Audience", "creatorrizz-api")).BuildServiceProvider();
+
+    /// <summary>
+    /// The services the host builds, in the same order. IConfiguration belongs in the container
+    /// because the signing-key mapper takes it as a constructor argument, and without it resolving
+    /// the JWT options throws a resolution error that hides the validation failure under test.
+    /// </summary>
+    private static IServiceCollection AuthenticationServices(params (string Key, string? Value)[] values)
+    {
+        IConfiguration configuration = ConfigurationWith(values);
+        var services = new ServiceCollection().AddLogging();
+        services.AddSingleton(configuration);
+        services.AddCreatorRizzAuthentication(configuration);
+        return services;
     }
 
     private static async Task<bool> IsAllowed(IAuthorizationService authorization, string policy, ClaimsPrincipal principal) =>

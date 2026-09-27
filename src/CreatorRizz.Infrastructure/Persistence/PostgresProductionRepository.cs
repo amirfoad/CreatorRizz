@@ -24,6 +24,33 @@ public sealed class PostgresProductionRepository(CreatorRizzDbContext database) 
         return production is not null;
     }
 
+    /// <summary>
+    /// Review filtering goes through <see cref="ProductionWorkflow.ReviewAwaitingDecision"/> so the
+    /// queue cannot drift from the transitions that put a production into a waiting state.
+    /// </summary>
+    public ProductionPage List(ProductionQuery query)
+    {
+        var matching = database.Productions.AsNoTracking().AsQueryable();
+        if (query.State is { } state) matching = matching.Where(production => production.State == state);
+        if (query.AwaitingReview is { } review)
+        {
+            var waiting = new[] { ProductionState.ScriptInReview, ProductionState.RightsReview, ProductionState.PublishReview }
+                .Where(candidate => ProductionWorkflow.ReviewAwaitingDecision(candidate) == review)
+                .ToArray();
+            matching = matching.Where(production => waiting.Contains(production.State));
+        }
+
+        // Newest first: the operator is looking for what to work on now, and a review queue that shows
+        // the oldest stuck item first hides the reason it is stuck.
+        var page = matching
+            .OrderByDescending(production => production.CreatedAt)
+            .ThenByDescending(production => production.Id)
+            .Skip(query.Skip)
+            .Take(query.Take)
+            .ToArray();
+        return new ProductionPage(page, matching.Count(), query.Skip, query.Take);
+    }
+
     public void Submit(Guid id, int expectedVersion, ReviewKind kind)
     {
         var production = GetRequired(id, expectedVersion);

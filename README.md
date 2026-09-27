@@ -2,7 +2,7 @@
 
 CreatorRizz ابزار داخلی برای کشف سوژه، نوشتن روایت، بازبینی حقوق و رندر کنترل‌شده YouTube Shorts است.
 
-بخش‌هایی که هنوز به خروجی واقعی نمی‌رسند: رندر (adapter فقط `ffmpeg -version` را اجرا می‌کند و خطا می‌دهد)، TTS (provider ثبت‌شده خطا می‌دهد) و انتشار به YouTube (`IYouTubePublisher` هنوز به هیچ endpoint یا transitionی وصل نیست). وضعیت دقیق هر کدام در [Task Progress](docs/task-progress.md) و فهرست کار باقی‌مانده در [Architecture Review](docs/architecture-review.md) آمده است.
+بخش‌هایی که هنوز به خروجی واقعی نمی‌رسند: رندر (worker و ساخت دستور FFmpeg اضافه شده‌اند، ولی FFmpeg روی این ماشین نصب نیست و هیچ encode واقعی اجرا نشده)، TTS (provider ثبت‌شده خطا می‌دهد و هیچ job نوع `TextToSpeech` مصرف نمی‌شود) و انتشار به YouTube (`IYouTubePublisher` هنوز به هیچ endpoint یا transitionی وصل نیست). وضعیت دقیق هر کدام در [Task Progress](docs/task-progress.md) و فهرست کار باقی‌مانده در [Architecture Review](docs/architecture-review.md) آمده است.
 
 لوگوی برنامه در `web/public/branding/creatorrizz-logo.png` قرار دارد و رابط وب از همان فایل استفاده می‌کند.
 
@@ -20,7 +20,7 @@ CreatorRizz ابزار داخلی برای کشف سوژه، نوشتن روای
 
 ## ساختار
 
-- `src/CreatorRizz.Api`: HTTP API، validation مرز HTTP و health endpoint
+- `src/CreatorRizz.Api`: HTTP API، validation مرز HTTP، احراز هویت و health endpoint
 - `src/CreatorRizz.Domain`: مدل و ruleهای دامنه؛ شامل `Models/`، `Policies/`، `Workflow/`، `Rendering/`، `Captions/`، `Scoring/` و `Scripting/`
 - `src/CreatorRizz.Application`: use caseها و portهای موردنیاز برای اجرای workflow
 - `src/CreatorRizz.Infrastructure`: configuration، adapterهای بیرونی، EF Core و migrationهای PostgreSQL (`Persistence/`)
@@ -37,6 +37,7 @@ CreatorRizz ابزار داخلی برای کشف سوژه، نوشتن روای
 4. `dotnet build CreatorRizz.sln --configuration Release`
 5. `dotnet test CreatorRizz.sln --configuration Release`
 6. از پوشه `web`: `npm ci`، سپس `npm run typecheck` و `npm run build`
+7. `dotnet user-jwts create --project src/CreatorRizz.Api --role reviewer` تا یک توکن بازبین برای کار محلی داشته باشید. بدون یک منبع توکن، API عمداً startup نمی‌شود.
 
 API در development با `dotnet run --project src/CreatorRizz.Api` اجرا می‌شود. `GET /health/live` زنده‌بودن پردازش و `GET /health/ready` آمادگی تنظیمات لازم را نشان می‌دهد.
 
@@ -64,7 +65,31 @@ dotnet ef migrations add <Name> --project src/CreatorRizz.Infrastructure --outpu
 
 - `IWorkflowTransaction` پورتی در Application است و `PostgresWorkflowTransaction` پیاده‌سازی آن در Infrastructure. هر دو روی همان `CreatorRizzDbContext` scope اجرا می‌شوند، که در `ServiceCollectionExtensions` به‌صورت scoped ثبت شده‌اند.
 - کلید idempotency از نسخه‌ای ساخته می‌شود که درخواست‌دهنده خوانده، نه از نسخهٔ بعدیِ حدس‌زده‌شده. enqueue تکراری همان کلید یک کار است نه دو، و ایندکس یکتای database مرجع نهایی است.
-- **مصرف‌کننده‌ای وجود ندارد.** ستون‌های claim و completion هم عمداً اضافه نشده‌اند چون هیچ چیزی آن‌ها را نمی‌نویسد. تا وقتی `BackgroundService`ای ردیف‌ها را برندارد، هیچ render یا TTS اجرا نمی‌شود.
+- **مصرف صف با lease انجام می‌شود، نه با حذف ردیف.** ستون‌های `claimed_at`, `claimed_by`, `completed_at`, `attempts` و `last_error` روی `job_outbox` هستند. کاری که workerش می‌میرد حذف نمی‌شود؛ lease منقضی می‌شود و ردیف دوباره پیشنهاد می‌شود، و دلیل شکست روی ردیف می‌ماند.
+- `IProductionJobDispatcher` پورت این کار در Application و `PostgresProductionJobDispatcher` پیاده‌سازی آن در Infrastructure است. claim یک `UPDATE` با زیرپرسمان `FOR UPDATE SKIP LOCKED` است: دو worker هرگز یک ردیف را نمی‌گیرند و بازندهٔ مسابقه پشت قفل منتظر نمی‌ماند بلکه ردیف بعدی را برمی‌دارد.
+- `RenderJobWorker` در `CreatorRizz.Workers` فقط job نوع `Render` را claim می‌کند، خروجی FFmpeg را در object storage می‌نویسد، `CompleteRendering` را صدا می‌زند و ردیف را کامل می‌کند. خطا ردیف را آزاد می‌کند تا با سقف `MaxAttempts` دوباره تلاش شود. نسخهٔ production را از دیتابیس می‌خواند و حدس نمی‌زند، تا قاعدهٔ If-Match دور زده نشود.
+- job نوع `TextToSpeech` عمداً مصرف نمی‌شود؛ provider واقعی و محل ثبت خروجی صوتی وجود ندارد.
+
+## خواندن backlog و صف بازبینی
+
+`GET /productions` صفحه‌ای از productionها می‌دهد. بدون فیلتر، کل backlog است:
+
+```http
+GET /productions?state=ScriptDraft&skip=0&take=50
+```
+
+با `awaitingReview` همان endpoint صف بازبینی می‌شود — یعنی فقط productionهایی که منتظر یک تصمیم هستند:
+
+```http
+GET /productions?awaitingReview=Script
+GET /productions?awaitingReview=Rights
+GET /productions?awaitingReview=Publish
+```
+
+- این یک endpoint است نه دو، چون هر دو از یک جدول و یک شرط می‌آیند. نگاشت state به نوع بازبینی در `ProductionWorkflow.ReviewAwaitingDecision` زندگی می‌کند، کنار همان transitionهایی که آن state را می‌سازند.
+- پاسخ `Items`، `TotalCount`، `Skip` و `HasMore` دارد. `TotalCount` شمارش کل فیلتر است نه شمارش صفحه، وگرنه کلاینت نمی‌تواند صفحه‌بندی کند.
+- هر ردیف `State` و `Version` خودش را دارد. نسخه را باید خواند و در `If-Match` فرستاد؛ حدس زدنش یعنی گرفتن conflict به‌جای بازنویسی کار بازبین دیگر.
+- `take` بین ۱ و ۲۰۰ است و مقدار بیرون از آن ۴۰۰ می‌دهد، همان‌طور که یک `state` یا `awaitingReview` ناشناخته ۴۰۰ می‌دهد. این‌ها ۴۰۰ هستند نه ۴۰۴: درخواست درست است ولی دربارهٔ چیزی می‌پرسد که این سرویس ندارد.
 
 ## مسیر کامل workflow
 
@@ -143,14 +168,52 @@ Infrastructure بر اساس نوع adapter دسته‌بندی شده است: `
 
 در Visual Studio، تمام لایه‌های runtime زیر solution folderِ `src` و پروژه‌های test زیر `tests` نمایش داده می‌شوند.
 
+## احراز هویت و نقش بازبین
+
+هیچ endpointای بدون توکن معتبر باز نیست، و نقش بازبین دیگر از هدر `X-Role` یا بدنهٔ درخواست خوانده نمی‌شود. هر دو از ادعاهای توکن می‌آیند.
+
+- **توکن بیرونی است.** API توکن صادر نمی‌کند و هیچ signing secret خودش ندارد. `ApiAuthentication` فقط اعتبارسنجی می‌کند.
+- **`FallbackPolicy` روی همهٔ endpointها اعمال می‌شود** و فقط `RequireAuthenticatedUser` می‌خواهد. یعنی endpoint تازه پیش‌فرض بسته است و فقط وقتی کسی آگاهانه `AllowAnonymous` بگذارد باز می‌شود. `/health/live` و `/health/ready` تنها استثنا هستند.
+- **عبور از گیت تصمیم نقش می‌خواهد.** `POST /productions/{id}/reviews/{kind}` به سیاست `reviewer` نیاز دارد که `RequireAuthenticatedUser`، نقش `reviewer` و وجود claim `sub` را با هم می‌خواهد.
+- **نام بازبین از claim `sub` خوانده می‌شود** (`ReviewerAccess.ReadId`) و روی review decision و audit event ثبت می‌شود. `ReviewRequest` فیلد `ReviewerId` ندارد، پس caller نمی‌تواند با ویرایش یک فیلد، تصمیم را به نام دیگری ثبت کند. توکنی که `sub` نداشته باشد خطا می‌دهد و قابل نسبت‌دادن نیست.
+- **`MapInboundClaims = false`** چون نگاشت پیش‌فرض SDK نام `sub` و نقش‌ها را به URIهای طولانی claim بازنویسی می‌کند و سیاست reviewer معنای دیگری پیدا می‌کند.
+- **startup بدون منبع توکن شکست می‌خورد.** `Audience` و وجود یکی از این دو باید پیکربندی شده باشد، وگرنه `ValidateOnStart` قبل از پذیرش ترافیک می‌ایستد: یک `Authority` (ارائه‌دهندهٔ هویت) یا کلیدهای امضا زیر `TokenValidationParameters:IssuerSigningKeys`. سرویسی که نتواند توکر واقعی را از جعلی تشخیص دهد نباید بالا بیاید.
+- **`ProductionVersionPreconditionMiddleware` بعد از `UseAuthentication` اجرا می‌شود.** بدون توکن، پاسخ ۴۰۱ است نه ۴۲۸؛ گیت نسخه راهی برای کاوش endpointی که اجازهٔ فراخوانی‌اش را نداری نیست.
+
+پیکربندی در بخش `Authentication` است:
+
+```json
+{
+  "Authentication": {
+    "Schemes": {
+      "Bearer": {
+        "Authority": "https://login.example.com",
+        "Audience": "creatorrizz-api",
+        "RequireHttpsMetadata": true
+      }
+    }
+  }
+}
+```
+
+برای توسعهٔ محلی بدون ارائه‌دهندهٔ هویت، کلید ابزار رسمی SDK را می‌خواند:
+
+```powershell
+dotnet user-jwts create --project src/CreatorRizz.Api --role reviewer
+```
+
+این فرمان کلیدها را در user secrets زیر `Authentication:Schemes:Bearer:SigningKeys` می‌نویسد. `LocalSigningKeysFromUserJwts` آن‌ها را روی `IssuerSigningKeys` نگاشت می‌کند، چون خود JWT handler این بخش را نمی‌خواند؛ بدون این نگاشت ابزار توکن می‌دهد، سرویس بالا می‌آید و بعد همان توکن را رد می‌کند. این نگاشت فقط وقتی `Authority` خالی است اعمال می‌شود، پس استقرار با ارائه‌دهندهٔ واقعی دست‌نخورده می‌ماند.
+
+Swagger در محیط توسعه دکمهٔ Authorize دارد و درخواست‌ها را با همان توکن می‌فرستد.
+
 ## محدودیت‌های شناخته‌شده
 
 این‌ها نقص پنهان نیستند و در فهرست بالا هم آمده‌اند، ولی استفاده از API بدون دانستن آن‌ها گمراه‌کننده است.
 
-- **API احراز هویت ندارد.** نقش بازبین از هدر `X-Role` و شناسهٔ بازبین از بدنهٔ درخواست خوانده می‌شود. هر کسی که به سرویس دسترسی شبکه‌ای داشته باشد می‌تواند گیت بازبینی را عبور دهد و audit هم actor نامعتبر ثبت می‌کند. این قبل از هر کار دیگری باید رفع شود.
-- **صف job مصرف‌کننده ندارد.** کارها در جدول `job_outbox` در PostgreSQL ثبت می‌شوند، پس با خروج پروسه از بین نمی‌روند، ولی هیچ `BackgroundService`ای آن‌ها را claim و اجرا نمی‌کند. ردیف‌ها جمع می‌شوند و هیچ render یا TTS اجرا نمی‌شود.
+- **مدل دسترسی فقط «توکن معتبر» و «نقش reviewer» است.** هر کسی که یک توکن معتبر داشته باشد می‌تواند همهٔ endpointهای غیر‌health را صدا بزند و فقط گذراندن گیت تصمیم به نقش `reviewer` نیاز دارد. جداسازی مشتری، workspace و مالکیت production هنوز در مدل وجود ندارد، پس این برای فروش عمومی کافی نیست.
+- **صف job فقط برای Render مصرف می‌شود.** `RenderJobWorker` ردیف‌های نوع `Render` را claim و اجرا می‌کند، ولی FFmpeg روی این ماشین نصب نیست و provider واقعی TTS هم وجود ندارد. ردیف‌های نوع `TextToSpeech` ثبت می‌شوند و هرگز برداشته نمی‌شوند، و هیچ encode واقعی اجرا نشده است.
 - **`RedisConnectionString` و `ObjectStorageEndpoint` استفاده نمی‌شوند.** هر دو در startup اعتبارسنجی می‌شوند و بعد رها می‌شوند. تنها storage فعال، `LocalObjectStorage` روی دیسک است و سرویس MinIO در `docker-compose.yml` هیچ clientای ندارد.
-- **`GET /productions` وجود ندارد.** فقط خواندن با id ممکن است، پس صف بازبینی از API قابل ساخت نیست.
+- **`GET /productions` تازه اضافه شده است** ولی رابط وب هنوز آن را صدا نمی‌زند. `web` فقط یک صفحهٔ برند است، پس صف بازبینی هنوز از API خوانده می‌شود نه از داشبورد.
 - **rate limiter یک bucket مشترک دارد** با کلید ثابت، پس کل ترافیک از جمله `/health/*` در یک سهمیهٔ ۶۰ در دقیقه جمع می‌شود.
 
 ## تست integration

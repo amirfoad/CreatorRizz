@@ -10,6 +10,7 @@ public interface IProductionRepository
 {
     Production Create(Guid candidateId);
     bool TryGet(Guid id, out Production? production);
+    ProductionPage List(ProductionQuery query);
     void Submit(Guid id, int expectedVersion, ReviewKind kind);
     void Decide(Guid id, int expectedVersion, ReviewKind kind, ReviewOutcome outcome, string reviewerId, string? notes);
     void AttachAsset(Guid id, int expectedVersion, StoredObject stored, string type, string? sourceUrl, RightsStatus rightsStatus, string narrativePurpose, string? licenseEvidence);

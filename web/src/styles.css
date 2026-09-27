@@ -1,21 +1,246 @@
+/*
+ * A review desk at night. The room is dark so the page in front of you is the brightest thing in it, and
+ * colour is spent only where it means something: the lamp on the gate you have to decide, the stamp on a
+ * gate a person already passed, the pencil mark on one that was turned down.
+ */
 :root {
-  --rizz-purple: #7c3aed;
-  --rizz-magenta: #ec4899;
-  --rizz-blue: #3b82f6;
-  --rizz-orange: #f97316;
-  --rizz-navy: #0f172a;
-  --rizz-text: #ffffff;
-  --rizz-muted: #94a3b8;
-  font-family: Arial, sans-serif;
-  color: var(--rizz-text);
-  background: var(--rizz-navy);
+  /* Surfaces, from the desk up. Barely different, so the structure is felt rather than seen. */
+  --desk: #0b1120;
+  --desk-lift: #111a2e;
+  --desk-raised: #16203a;
+  --rule: #1e2a44;
+
+  /* Ink on paper. */
+  --ink: #eef2fb;
+  --ink-quiet: #9aa8c4;
+  --ink-faint: #64748b;
+
+  /* A gate a person passed: the approval stamp. */
+  --gate-passed: #34d399;
+  /* The lamp on the gate in front of you. */
+  --gate-waiting: #fbbf24;
+  /* Turned down. The red editorial pencil. */
+  --gate-marked: #f87171;
+  /* Not reached yet. */
+  --gate-locked: #26324c;
+
+  /* The seal on anything clickable, and the only brand colour in the interface. */
+  --seal: #7c3aed;
+  --seal-quiet: #2a1e4a;
+
+  --narration-font: Georgia, 'Iowan Old Style', 'Times New Roman', serif;
+  --ui-font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --evidence-font: 'Cascadia Mono', 'SF Mono', Consolas, monospace;
+
+  color: var(--ink);
+  background: var(--desk);
+  font-family: var(--ui-font);
+  font-size: 15px;
+  line-height: 1.5;
 }
+
+* { box-sizing: border-box; }
 body { margin: 0; }
-.app-shell { min-height: 100vh; }
-.brand-bar { display: flex; align-items: center; gap: 1rem; padding: .75rem 1.5rem; border-bottom: 1px solid #293449; background: #121b2d; }
-.brand-logo { width: 112px; height: 58px; object-fit: contain; object-position: center; }
-h1 { margin: 0; font-size: 1.05rem; letter-spacing: .02em; }
-.brand-bar p { margin: .2rem 0 0; color: var(--rizz-muted); font-size: .8rem; }
-.workspace { max-width: 960px; margin: 3rem auto; padding: 0 1.5rem; }
-.workspace h2 { margin-bottom: .4rem; }
-.workspace p { color: var(--rizz-muted); }
+
+h1, h2, h3 { margin: 0; font-weight: 600; }
+h1 { font-size: 1rem; letter-spacing: .01em; }
+h2 { font-size: .95rem; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-quiet); }
+h3 { font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-faint); margin-bottom: .5rem; }
+p { margin: 0 0 .75rem; }
+code, pre { font-family: var(--evidence-font); }
+
+.visually-hidden {
+  position: absolute; width: 1px; height: 1px; overflow: hidden;
+  clip-path: inset(50%); white-space: nowrap;
+}
+
+/* Identifiers, checksums, versions: the things a reviewer copies, never set in the reading font. */
+.evidence-id { font-family: var(--evidence-font); font-size: .78em; color: var(--ink-faint); word-break: break-all; }
+
+.app-shell { min-height: 100vh; display: flex; flex-direction: column; }
+
+.brand-bar {
+  display: flex; align-items: center; gap: 1rem;
+  padding: .7rem 1.5rem;
+  border-bottom: 1px solid var(--rule);
+}
+.brand-logo { width: 96px; height: 44px; object-fit: contain; }
+.brand-text p { margin: 0; color: var(--ink-faint); font-size: .78rem; }
+.brand-bar .sign-out { margin-inline-start: auto; }
+
+.sign-out, .pager button, .filter {
+  font: inherit; font-size: .82rem;
+  color: var(--ink-quiet);
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: 5px;
+  padding: .3rem .7rem;
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease;
+}
+.sign-out:hover, .pager button:hover:not(:disabled), .filter:hover { color: var(--ink); border-color: var(--ink-faint); }
+.pager button:disabled { opacity: .4; cursor: default; }
+:focus-visible { outline: 2px solid var(--seal); outline-offset: 1px; }
+
+/* The desk: list on the left, evidence on the right. Split, because context is the point. */
+.desk {
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(320px, 30%) 1fr;
+  align-items: start;
+}
+
+/* ---- Docket ---- */
+
+.docket { border-inline-end: 1px solid var(--rule); padding: 1.25rem 1.25rem 2rem; }
+.docket-head h2 { margin-bottom: .35rem; }
+.docket-count { color: var(--gate-waiting); font-size: .85rem; margin-bottom: .75rem; }
+.docket-filters { display: flex; flex-wrap: wrap; gap: .35rem; margin-bottom: 1rem; }
+.filter-active { color: var(--ink); border-color: var(--seal); background: var(--seal-quiet); }
+
+.docket-rows { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
+.docket-row {
+  width: 100%;
+  display: flex; flex-direction: column; gap: .4rem; align-items: flex-start;
+  text-align: start;
+  font: inherit;
+  color: var(--ink);
+  background: var(--desk-lift);
+  border: 0;
+  border-inline-start: 2px solid transparent;
+  padding: .7rem .8rem;
+  cursor: pointer;
+  transition: background 150ms ease;
+}
+.docket-row:hover { background: var(--desk-raised); }
+.docket-row-selected { background: var(--desk-raised); border-inline-start-color: var(--seal); }
+.docket-row-head { display: flex; align-items: center; gap: .6rem; width: 100%; }
+.docket-row-state { font-size: .8rem; color: var(--ink-quiet); }
+.docket-row-meta { display: flex; flex-wrap: wrap; gap: .75rem; font-size: .75rem; color: var(--ink-faint); }
+
+.pager { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-top: 1rem; }
+.pager-position { font-family: var(--evidence-font); font-size: .75rem; color: var(--ink-faint); }
+
+/*
+ * The gate rail. Three segments in the order the server enforces, filled only where a person cleared
+ * them. It is the one element here that could only belong to this product: the whole product is three
+ * human gates that cannot be skipped, so the shape of a row is the shape of that promise.
+ */
+.gate-rail { display: inline-flex; gap: 2px; }
+.gate-segment {
+  width: 2.6rem; height: 1.1rem;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--gate-locked);
+  border-radius: 2px;
+}
+.gate-segment-name { font-size: .58rem; letter-spacing: .06em; text-transform: uppercase; color: var(--desk); font-weight: 700; }
+.gate-passed { background: var(--gate-passed); }
+.gate-waiting { background: var(--gate-waiting); }
+.gate-marked, .gate-stopped { background: var(--gate-marked); }
+.gate-locked .gate-segment-name { color: var(--ink-faint); }
+
+/* ---- Evidence ---- */
+
+.panel { padding: 1.25rem 1.5rem 2rem; }
+.panel-empty { color: var(--ink-quiet); }
+.panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 1.25rem; }
+.panel-state { margin: .2rem 0 0; font-family: var(--evidence-font); font-size: .75rem; color: var(--ink-faint); }
+
+.evidence { display: grid; grid-template-columns: 1fr minmax(240px, 34%); gap: 2rem; }
+.evidence-main h3:not(:first-child) { margin-top: 1.5rem; }
+.evidence-side h3:not(:first-child) { margin-top: 1.5rem; }
+
+/* The narration is the thing being judged, so it is the only thing set in a reading face. */
+.narration {
+  font-family: var(--narration-font);
+  font-size: 1.05rem;
+  line-height: 1.7;
+  color: var(--ink);
+  white-space: pre-wrap;
+  max-width: 62ch;
+}
+.claim-map {
+  margin: 0; padding: .6rem .7rem;
+  background: var(--desk-lift);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  font-size: .72rem; color: var(--ink-quiet);
+  max-height: 16rem; overflow: auto;
+}
+.claim-map-broken { border-color: var(--gate-marked); color: var(--gate-marked); }
+.provenance { font-size: .82rem; color: var(--ink-quiet); }
+
+.asset-list, .audit-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: .6rem; }
+.asset { display: flex; flex-wrap: wrap; align-items: baseline; gap: .5rem; }
+.asset-type { font-size: .8rem; }
+.asset-evidence { flex-basis: 100%; font-size: .75rem; color: var(--ink-faint); }
+.rights { font-size: .68rem; letter-spacing: .05em; text-transform: uppercase; padding: .1rem .35rem; border-radius: 3px; }
+.rights-licensed, .rights-owned { color: var(--gate-passed); background: color-mix(in srgb, var(--gate-passed) 12%, transparent); }
+.rights-unknown, .rights-rejected { color: var(--gate-marked); background: color-mix(in srgb, var(--gate-marked) 12%, transparent); }
+
+.audit-list { font-size: .78rem; }
+.audit-list li { display: flex; flex-wrap: wrap; gap: .5rem; border-inline-start: 1px solid var(--rule); padding-inline-start: .6rem; }
+.audit-action { color: var(--ink); }
+.audit-actor { color: var(--ink-quiet); }
+.audit-when { color: var(--ink-faint); font-family: var(--evidence-font); font-size: .95em; }
+.audit-payload { flex-basis: 100%; }
+
+/* ---- The decision ---- */
+
+.decision { margin-top: 2rem; padding-top: 1.25rem; border-top: 1px solid var(--rule); }
+.decision-notes { display: block; margin-bottom: .75rem; }
+.decision-notes > span { display: block; font-size: .78rem; color: var(--ink-quiet); margin-bottom: .3rem; }
+.decision-optional { color: var(--ink-faint); }
+.decision-notes textarea, .token-field textarea {
+  width: 100%; max-width: 62ch;
+  font: inherit;
+  color: var(--ink);
+  background: var(--desk-lift);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: .5rem .6rem;
+  resize: vertical;
+}
+.decision-buttons { display: flex; gap: .5rem; }
+.decision-buttons button, .token-gate button[type='submit'] {
+  font: inherit; font-size: .88rem;
+  padding: .45rem 1.1rem;
+  border-radius: 5px;
+  border: 1px solid var(--rule);
+  background: var(--desk-lift);
+  color: var(--ink);
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease;
+}
+.decision-buttons button:disabled, .token-gate button:disabled { opacity: .45; cursor: default; }
+
+/* One accent, and it marks the action that moves work forward. The other two are outcomes, not
+   decoration: send-back and reject are destructive and say so with weight, not with a bright fill. */
+.decision-approve { border-color: var(--seal) !important; background: var(--seal-quiet) !important; }
+.decision-approve:hover:not(:disabled) { background: color-mix(in srgb, var(--seal) 30%, transparent) !important; }
+.decision-rework:hover:not(:disabled) { border-color: var(--gate-waiting) !important; }
+.decision-reject:hover:not(:disabled) { border-color: var(--gate-marked) !important; }
+
+.notice { color: var(--ink-faint); font-size: .85rem; }
+.notice-failure {
+  color: var(--gate-marked);
+  border-inline-start: 2px solid var(--gate-marked);
+  padding: .4rem .7rem;
+  background: color-mix(in srgb, var(--gate-marked) 8%, transparent);
+}
+
+/* ---- Signing in ---- */
+
+.token-gate { max-width: 60ch; margin: 3rem auto; padding: 0 1.5rem; }
+.token-gate h2 { margin-bottom: .75rem; }
+.token-gate p { color: var(--ink-quiet); }
+.token-command { padding: .6rem .7rem; background: var(--desk-lift); border: 1px solid var(--rule); border-radius: 4px; font-size: .75rem; overflow-x: auto; }
+.token-gate form { display: flex; flex-direction: column; align-items: flex-start; gap: .75rem; margin-top: 1.25rem; }
+.token-field { width: 100%; }
+.token-field textarea { font-family: var(--evidence-font); font-size: .78rem; }
+
+@media (max-width: 900px) {
+  .desk { grid-template-columns: 1fr; }
+  .docket { border-inline-end: 0; border-bottom: 1px solid var(--rule); }
+  .evidence { grid-template-columns: 1fr; gap: 1.5rem; }
+}

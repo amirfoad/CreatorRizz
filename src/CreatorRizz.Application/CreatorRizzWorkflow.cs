@@ -89,6 +89,13 @@ public sealed class CreatorRizzWorkflow(
     }
 
     public bool TryGetProduction(Guid productionId, out Production? production) => productions.TryGet(productionId, out production);
+
+    /// <summary>
+    /// Reads a page of the backlog, or of the review queue when the query names a review kind. The
+    /// queue is the same query rather than a second repository method because it is the same rows: a
+    /// production waiting on a decision is one whose state says so.
+    /// </summary>
+    public ProductionPage ListProductions(ProductionQuery query) => productions.List(query);
     public IReadOnlyCollection<Asset> GetAssets(Guid productionId) => productions.GetAssets(productionId);
     public IReadOnlyCollection<ScriptVersion> GetScripts(Guid productionId) => productions.GetScripts(productionId);
     public IReadOnlyCollection<ScriptGeneration> GetScriptGenerations(Guid productionId) => productions.GetScriptGenerations(productionId);

@@ -86,8 +86,8 @@
 - `JobOutboxEntry` یک entity صرفاً Infrastructure است، چون outbox یک سازوکار زیرساختی است نه یک مفهوم دامنه. `ProductionJobKind` هم یک enum واقعی است، نه رشته‌ای مثل `"tts"` که تایپ نمی‌شد.
 - `QueueRenderAsync` حالا از `IWorkflowTransaction` استفاده می‌کند تا تغییر وضعیت و ثبت کار یک commit باشند. این تنها جایی است که شکاف واقعی داشت: وضعیت `Rendering` می‌شد و *بعد* enqueue، پس crash بین این دو production را برای همیشه معلق می‌گذاشت و هیچ چیزی آن را reconcile نمی‌کرد. تست `ARenderThatCannotBeRecordedLeavesTheProductionOutOfRendering` همین رفتار را روی PostgreSQL واقعی قفل می‌کند.
 - کلید idempotency از **نسخه‌ای که درخواست‌دهنده خوانده** ساخته می‌شود، نه `expectedVersion + 1`. خواندن README سیاست صریحی دارد که هیچ‌جا نسخهٔ بعدی حدس زده نشود، و اینجا همان قاعده اعمال شد.
-- **ستون‌های claim و completion اضافه نشدند.** هیچ consumerی وجود ندارد، پس هر ستونی که کسی نمی‌نویسد فقط مدل را جلوتر از واقعیت می‌برد. با آمدن dispatcher یک migration دیگر اضافه می‌شود؛ همان الگویی که قبلاً برای `fingerprint` در همین ریپو اجرا شده.
-- یک نکتهٔ تست که ارزش ثبت دارد: `PostgresFixture` یک دیتابیس برای کل collection می‌سازد، پس شمارش سطرهای جدول مشترک به ترتیب اجرای تست‌ها وابسته است. هر assertion مربوط به `job_outbox` به `production_id` خودش محدود شد.
+- **ستون‌های claim و completion با آمدن dispatcher اضافه شدند**، در migration `ClaimOutboxWork`. آن تصمیم عمداً تا وقتی مصرف‌کننده‌ای وجود نداشت عقب نگه داشته شده بود، چون ستونی که کسی نمی‌نویسد مدل را جلوتر از واقعیت می‌برد.
+- نکتهٔ تست که ارزش ثبت دارد: `PostgresFixture` یک دیتابیس برای کل collection می‌سازد، پس شمارش سطرهای جدول مشترک به ترتیب اجرای تست‌ها وابسته است. هر assertion مربوط به `job_outbox` به `production_id` خودش محدود شد. تست‌های dispatcher یک استثنا لازم داشتند: outbox یک صف مشترک است نه فهرست هر production، پس هر تست با `EmptyOutbox()` شروع می‌شود تا بتواند بشمارد یا دوبار claim کند. این محدودیت در کامنت همان helper آمده، نه در یک تنظیم مخفی.
 
 #### `OpenAiCompatibleScriptGenerator`
 
@@ -100,12 +100,31 @@
 - وقتی credential پیکربندی نشده، `DisabledScriptGenerator` ثبت می‌شود تا نبودِ کلید باعث نشود سرویس بالا نیاید؛ خطا در همان گیت draft و با پیام قابل‌اقدام داده می‌شود.
 - `ITextToSpeechProvider` که اصلاً در DI ثبت نشده بود حالا ثبت شده است. provider واقعی هنوز نیست و همچنان خطا می‌دهد.
 
+### احراز هویت API
+
+کد در commit `8748a9f` اضافه شد. تا پیش از این، نقش بازبین از هدر `X-Role` و شناسهٔ بازبین از بدنهٔ درخواست خوانده می‌شد؛ هر دو را caller انتخاب می‌کند، پس هر کسی که به پورت می‌رسید گیت بازبینی را عبور می‌داد و audit هم هر نامی را که در body آمده بود ثبت می‌کرد. `X-Role` و فیلد بازبین در بدنهٔ `ReviewRequest` حذف شدند.
+
+- **توکن بیرونی است.** API هیچ signing secret خودش ندارد و توکن صادر نمی‌کند؛ فقط اعتبارسنجی می‌کند. جداسازی این نگه داشته شده چون افزودن issuer داخل همین سرویس، یک secret جدید در همان فرایندی می‌سازد که قرار است کنترل شود.
+- **`FallbackPolicy` انتخاب کلیدی بود.** هر endpoint فقط با policy صریح باز می‌شود، نه با فراموشی یک خط. با ۲۰ endpoint باز، تکرار `RequireAuthorization` در هر کدام یعنی یکی از آنها فراموش می‌شود و همان باگ برمی‌گردد — همان استدلالی که الزام `If-Match` را به middleware منتقل کرد. `AllowAnonymous` فقط روی دو health probe است.
+- **نام بازبین از `sub` می‌آید، نه از یک نام نمایشی.** `ReviewerAccess.ReadId` تنها مالک این تبدیل است و توکن بدون `sub` را خطا می‌دهد، چون تصمیمی که به کسی نسبت داده نشود در audit بی‌معناست.
+- **`MapInboundClaims = false`** لازم بود. نگاشت پیش‌فرض SDK نام `sub` و نقش‌ها را به URIهای طولانی claim بازنویسی می‌کند، و آن‌وقت `RequireRole("reviewer")` چیزی می‌شد که متنش نمی‌گوید. تست باید دقیقاً همان شکل claim توکن واقعی را بسازد، وگرنه یک رد شدن ساختگی را معتبر جا می‌زند.
+- **ترتیب middleware عمدی است.** `ProductionVersionPreconditionMiddleware` بعد از `UseAuthentication` آمده، پس caller بدون توکن ۴۰۱ می‌گیرد نه ۴۲۸. گیت نسخه راهی برای کاوش endpointی که اجازهٔ فراخوانی‌اش را نداری نیست.
+- **startup بدون منبع توکن شکست می‌خورد.** `ValidateOnStart` هم `Audience` و هم وجود `Authority` یا کلید امضا را می‌خواهد. حالتی که سرویس بالا بیاید ولی نتواند توکر واقعی را از جعلی تشخیص دهد، بدتر از بالا نیامدن است.
+- **`LocalSigningKeysFromUserJwts` یک دریچهٔ توسعه است، نه معماری.** کلید `dotnet user-jwts create` را از user secrets روی `IssuerSigningKeys` نگاشت می‌کند، چون خود JWT handler آن بخش را نمی‌خواند؛ بدون نگاشت ابزار توکن می‌دهد و سرویس همان توکن را رد می‌کند. فقط وقتی `Authority` خالی است اعمال می‌شود، پس استقرار واقعی دست‌نخورده می‌ماند.
+
+#### نقص تستی که پیدا و رفع شد
+
+- **سه تست از ده تست `ReviewerGateTests` شکست می‌خوردند و هیچ شرطی را واقعاً نمی‌سنجیدند.** `BearerOptions` یک `ServiceCollection` خالی را build می‌کرد، ولی `LocalSigningKeysFromUserJwts` در سازنده‌اش `IConfiguration` می‌گیرد. نتیجه `InvalidOperationException` از resolve بود، نه `OptionsValidationException`ای که تست ادعا می‌کرد می‌بیند. یعنی تست‌های «startup بدون منبع توکن می‌ایستد» و «بدون `Audience` می‌ایستد» سبز و قرمز می‌شدند بدون آنکه هرگز به validation برسند.
+- درستی در خود برنامه بود، در تست نبود: host همیشه `IConfiguration` را ثبت می‌کند. یک helper مشترک اضافه شد که configuration را در container می‌گذارد، همان‌طور که host می‌کند، و هر سه تست از آن استفاده می‌کنند.
+- این همان الگویی است که در بخش validation وزن‌ها هم دیده شد: تستی که به‌جای مسیر واقعی، extension را می‌آزماید، شکاف را از کسور می‌گذارد. تست احراز هویت هم دقیقاً همین کار را می‌کرد.
+
 ### کار باقی‌مانده
 
-- **provider واقعی TTS و FFmpeg نیست.** `FfmpegRenderExecutor` فقط `ffmpeg -version` اجرا می‌کند و بعد `NotSupportedException` می‌دهد؛ نه filter graph دارد، نه آرگومان از manifest، نه burn-in زیرنویس. ضمناً `IRenderExecutor` در DI ثبت نشده و هیچ `BackgroundService`ای برای render وجود ندارد.
+- **provider واقعی TTS نیست و FFmpeg نصب نشده.** `FfmpegRenderExecutor` حالا filter graph را از manifest می‌سازد و burn-in زیرنویس را دارد، ولی روی این ماشین FFmpeg نصب نیست و هیچ encode واقعی اجرا نشده؛ تست‌ها فقط ساخت آرگومان‌ها را می‌سنجند.
 - **`IYouTubePublisher` به هیچ چیزی وصل نیست.** نه endpoint، نه متد repository، نه transition. `ProductionState.Uploading` و `Published` enum هستند ولی هیچ کدی آن‌ها را نمی‌نویسد.
-- صف حالا پایدار است (جدول `job_outbox`) و enqueue با تغییر وضعیت اتمیک است، ولی **هنوز هیچ consumerای وجود ندارد**. ردیف‌های ثبت‌شده هرگز برداشته نمی‌شوند، پس هیچ render و TTS اجرا نمی‌شود و هیچ `CompleteRendering`ای صدا زده نمی‌شود. `IRenderExecutor` هم در DI ثبت نشده است. قدم بعدی یک `BackgroundService` است که ردیف را claim کند، اجرا کند و نتیجه را بنویسد.
-- **API احراز هویت ندارد.** نقش بازبین از هدر `X-Role` و شناسهٔ بازبین از بدنهٔ درخواست خوانده می‌شود. تا وقتی این هست، audit می‌تواند actor نامعتبر داشته باشد و این قبل از هر کار دیگری باید رفع شود.
+- صف برای render مصرف می‌شود ولی **job نوع `TextToSpeech` هنوز هرگز برداشته نمی‌شود**، چون provider واقعی و محل ثبت خروجی صوتی وجود ندارد. تا آن بیاید، productionهایی که به مرحلهٔ TTS می‌رسند در همان صف می‌مانند.
+- **`GET /productions` تازه اضافه شد و صف بازبینی از API ساختنی است.** یک endpoint با دو فیلتر (`state` و `awaitingReview`) به‌جای دو endpoint، چون هر دو از یک جدول و یک شرط می‌آیند. نگاشت state به نوع بازبینی در `ProductionWorkflow.ReviewAwaitingDecision` است، نه داخل query؛ دومین جایی که این نگاشت را می‌داشت باید با transitionها هماهنگ می‌ماند و هیچ‌کس یادش نمی‌ماند. رابط وب هنوز آن را صدا نمی‌زند.
+- **مدل دسترسی هنوز جداسازی مشتری ندارد.** نقش بازبین از توکن می‌آید و دیگر جعلی نیست، اما هر دارندهٔ یک توکن معتبر به همهٔ endpointهای غیر‌health دسترسی دارد. workspace، عضویت و بررسی مالکیت روی production، فایل، کانال و job وجود ندارد. audit دیگر actor جعلی نمی‌گیرد، ولی هنوز معلوم نیست آن actor به کدام مشتری تعلق دارد. صف بازبینی هم این را روشن‌تر کرد: هر دارندهٔ توکن، کل صف کل سرویس را می‌بیند.
 - CI فقط `workflow_dispatch` است؛ `push` و `pull_request` ندارد، پس نمی‌تواند جلوی یک PR را بگیرد.
 - health check فقط وجود چند رشتهٔ config را می‌سنجد؛ دیتابیس، صف، FFmpeg و providerها را بررسی نمی‌کند.
 - rate limiter یک bucket مشترک با کلید ثابت `"api"` دارد، پس کل ترافیک از جمله `/health/*` در یک سهمیهٔ ۶۰ در دقیقه جمع می‌شود.

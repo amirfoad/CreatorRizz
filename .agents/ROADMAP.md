@@ -61,7 +61,7 @@ CreatorRizz اکنون پایهٔ backend یک ابزار داخلی تولید 
 
 | بخش | وضعیت و شاهد |
 |---|---|
-| گیت‌های انسانی | قواعد Script/Rights/Publish وجود دارند: `src/CreatorRizz.Domain/Workflow/ProductionWorkflow.cs` و `Policies/PublishingPolicy.cs`؛ اعتبار هویت بازبین هنوز مسئله دارد |
+| گیت‌های انسانی | قواعد Script/Rights/Publish وجود دارند: `src/CreatorRizz.Domain/Workflow/ProductionWorkflow.cs` و `Policies/PublishingPolicy.cs`؛ احراز هویت بازبین در `8748a9f` اضافه شد ولی جداسازی مشتری هنوز نیست |
 | ذخیره‌سازی تراکنشی | PostgreSQL، migration، نسخهٔ script و audit وجود دارند: `src/CreatorRizz.Infrastructure/Persistence/CreatorRizzDbContext.cs` و repositoryها |
 | همزمانی | نسخهٔ production و precondition در کد هستند: `src/CreatorRizz.Domain/Models/Productions/Production.cs` و middleware نسخه |
 | discovery | RSS با allowlist؛ سیگنال واقعی آن فقط تازگی است: `src/CreatorRizz.Infrastructure/Discovery/RssDiscovery.cs:52` |
@@ -78,6 +78,7 @@ CreatorRizz اکنون پایهٔ backend یک ابزار داخلی تولید 
 ## موانع انتشار عمومی و فروش
 
 1. **هویت و جداسازی مشتریان:** `ProductionEndpoints.cs:129` نقش را از `X-Role` می‌خواند و شناسهٔ بازبین را از request می‌گیرد. ورود امن، workspace، عضویت و بررسی مالکیت روی API، فایل، کانال و job لازم است. audit باید actor معتبر داشته باشد. این مانع قبل از دسترسی مشتریان رفع شود.
+   - **به‌روزرسانی 2026-09-27:** نیمهٔ اول این مانع رفع شد. در `8748a9f` احراز هویت JWT اضافه شد، نقش از ادعاهای توکن خوانده می‌شود و `X-Role` و بازبینِ body حذف شدند. آنچه باقی است همان چیزی است که این سند N3 می‌نامد: workspace، عضویت و مالکیت روی production، فایل، کانال و job. تا وقتی آن‌ها نباشند، هر دارندهٔ یک توکن معتبر به همهٔ endpointهای غیر‌health دسترسی دارد.
 2. **پایداری عملیات:** `CreatorRizzWorkflow.cs:117` وضعیت را قبل از enqueue تغییر می‌دهد. قطع ارتباط می‌تواند production را معلق کند. ثبت پایدار قصد اجرای کار، تحویل امن به worker، شناسهٔ تکرار، تلاش مجدد محدود و reconciliation باید یکجا طراحی شوند.
 3. **اشتراک و مصرف:** پلن، مجوز استفاده، دفتر مصرف، پرداخت تأییدشده در سرور، تمدید، لغو، شکست پرداخت و بازپرداخت وجود ندارند. مصرف همزمان نباید اعتبار را منفی کند. پیام پرداخت تکراری نباید دوباره اعتبار بدهد. job تکراری نباید دوباره پول کم کند.
 4. **تولید واقعی:** AI، TTS، پردازش فایل، زیرنویس فارسی، preview، storage مشترک و upload باید پیاده‌سازی شوند. اعلام دستی `Rendered` اثبات خروجی رسانه‌ای نیست.

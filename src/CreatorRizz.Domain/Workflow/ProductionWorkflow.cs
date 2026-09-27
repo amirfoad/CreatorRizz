@@ -50,4 +50,17 @@ public static class ProductionWorkflow
     public static ProductionState BeginRendering(ProductionState state) => state == ProductionState.RightsApproved
         ? ProductionState.Rendering
         : throw new WorkflowRuleViolation("Rights approval is required before rendering.");
+
+    /// <summary>
+    /// The review a production is sitting in front of a reviewer for, or null when it is not waiting on
+    /// one. This lives next to the transitions above because it is the same mapping read backwards; a
+    /// query that worked it out again would be a second place to keep in step.
+    /// </summary>
+    public static ReviewKind? ReviewAwaitingDecision(ProductionState state) => state switch
+    {
+        ProductionState.ScriptInReview => ReviewKind.Script,
+        ProductionState.RightsReview => ReviewKind.Rights,
+        ProductionState.PublishReview => ReviewKind.Publish,
+        _ => null
+    };
 }

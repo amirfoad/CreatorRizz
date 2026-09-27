@@ -178,6 +178,14 @@ public sealed class CreatorRizzDbContext(DbContextOptions<CreatorRizzDbContext> 
             entity.Property(item => item.IdempotencyKey).HasColumnName("idempotency_key").HasMaxLength(200);
             entity.Property(item => item.PayloadJson).HasColumnName("payload_json").HasColumnType("jsonb");
             entity.Property(item => item.CreatedAt).HasColumnName("created_at");
+            entity.Property(item => item.ClaimedAt).HasColumnName("claimed_at");
+            entity.Property(item => item.ClaimedBy).HasColumnName("claimed_by").HasMaxLength(200);
+            entity.Property(item => item.CompletedAt).HasColumnName("completed_at");
+            entity.Property(item => item.Attempts).HasColumnName("attempts");
+            entity.Property(item => item.LastError).HasColumnName("last_error").HasMaxLength(2000);
+            // The dispatcher's claim query filters on kind, then orders by age, and only ever looks at
+            // rows that are not finished. This index is the one that keeps that from being a table scan.
+            entity.HasIndex(item => new { item.Kind, item.CompletedAt, item.CreatedAt });
             // The database, not the application, decides that one request is one unit of work. An
             // enqueue replayed inside a retried transaction then cannot become a second render.
             entity.HasIndex(item => item.IdempotencyKey).IsUnique();

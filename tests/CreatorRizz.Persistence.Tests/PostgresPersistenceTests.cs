@@ -143,6 +143,354 @@ public sealed class PostgresPersistenceTests(PostgresFixture fixture)
     }
 
     [Fact]
+    public async Task RecordedRenderWorkIsHandedToExactlyOneWorker()
+    {
+        EmptyOutbox();
+        var production = QueueRender();
+
+        var (first, second) = await ClaimFromTwoWorkersAtOnce(production);
+
+        // Before the dispatcher existed this row was never picked up at all. The pair is asserted rather
+        // than a single claim because two workers is the case that decides whether a render happens twice.
+        Assert.Single(new[] { first, second }, claim => claim is not null);
+        var claimed = first ?? second!;
+        Assert.Equal(production, claimed.ProductionId);
+        Assert.Equal(1, claimed.Attempt);
+        Assert.Equal("worker-1", ReadOutboxEntry(production).ClaimedBy);
+    }
+
+    [Fact]
+    public async Task AClaimedRowIsNotOfferedToAnyoneElseWhileTheLeaseHolds()
+    {
+        EmptyOutbox();
+        var production = QueueRender();
+        var clock = new MovableClock(DateTimeOffset.UtcNow);
+
+        await using var first = fixture.CreateContext();
+        var claimed = await new PostgresProductionJobDispatcher(first, clock)
+            .ClaimNextAsync(ProductionJobKind.Render, "worker-1", TimeSpan.FromMinutes(30), 3, CancellationToken.None);
+
+        Assert.NotNull(claimed);
+        await using var second = fixture.CreateContext();
+        Assert.Null(await new PostgresProductionJobDispatcher(second, clock)
+            .ClaimNextAsync(ProductionJobKind.Render, "worker-2", TimeSpan.FromMinutes(30), 3, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task AWorkedRowIsNotOfferedAgain()
+    {
+        EmptyOutbox();
+        var production = QueueRender();
+        var clock = new MovableClock(DateTimeOffset.UtcNow);
+
+        Guid jobId;
+        await using (var context = fixture.CreateContext())
+        {
+            var dispatcher = new PostgresProductionJobDispatcher(context, clock);
+            jobId = (await dispatcher.ClaimNextAsync(ProductionJobKind.Render, "worker-1", TimeSpan.FromMinutes(30), 3, CancellationToken.None))!.Id;
+            await dispatcher.CompleteAsync(jobId, CancellationToken.None);
+        }
+
+        // A lease that outlives the completed row would still keep it out of circulation; this is the
+        // check that completion, not the clock, is what retires the work.
+        clock.Advance(TimeSpan.FromHours(2));
+        await using var later = fixture.CreateContext();
+        Assert.Null(await new PostgresProductionJobDispatcher(later, clock)
+            .ClaimNextAsync(ProductionJobKind.Render, "worker-1", TimeSpan.FromMinutes(30), 3, CancellationToken.None));
+
+        var entry = ReadOutboxEntry(production);
+        Assert.Equal(jobId, entry.Id);
+        Assert.NotNull(entry.CompletedAt);
+        Assert.Null(entry.ClaimedBy);
+    }
+
+    [Fact]
+    public async Task AFailedRowGoesBackOnTheQueueWithTheReasonItFailed()
+    {
+        EmptyOutbox();
+        var production = QueueRender();
+        var clock = new MovableClock(DateTimeOffset.UtcNow);
+
+        await using (var context = fixture.CreateContext())
+        {
+            var dispatcher = new PostgresProductionJobDispatcher(context, clock);
+            var claimed = (await dispatcher.ClaimNextAsync(ProductionJobKind.Render, "worker-1", TimeSpan.FromMinutes(30), 3, CancellationToken.None))!;
+            await dispatcher.ReleaseAsync(claimed.Id, "FFmpeg exited with 1.\nNo such filter", CancellationToken.None);
+        }
+
+        // The row is released, not deleted, and the reason is on the row. "This job is stuck" is not a
+        // diagnosis; the operator has to be able to read why without turning on debug logging.
+        var released = ReadOutboxEntry(production);
+        Assert.Null(released.CompletedAt);
+        Assert.Null(released.ClaimedBy);
+        Assert.Contains("FFmpeg exited with 1", released.LastError!, StringComparison.Ordinal);
+        Assert.DoesNotContain("\n", released.LastError!, StringComparison.Ordinal);
+
+        await using var retry = fixture.CreateContext();
+        var retried = await new PostgresProductionJobDispatcher(retry, clock)
+            .ClaimNextAsync(ProductionJobKind.Render, "worker-1", TimeSpan.FromMinutes(30), 3, CancellationToken.None);
+        Assert.NotNull(retried);
+        Assert.Equal(2, retried.Attempt);
+    }
+
+    [Fact]
+    public async Task AWorkedRowWhoseWorkerDiedBecomesAvailableAgainWhenItsLeaseExpires()
+    {
+        EmptyOutbox();
+        var production = QueueRender();
+        var clock = new MovableClock(DateTimeOffset.UtcNow);
+
+        await using (var context = fixture.CreateContext())
+        {
+            var claimed = await new PostgresProductionJobDispatcher(context, clock)
+                .ClaimNextAsync(ProductionJobKind.Render, "worker-1", TimeSpan.FromMinutes(30), 3, CancellationToken.None);
+            Assert.NotNull(claimed);
+        }
+
+        // Nothing released this row and nothing completed it, because the worker holding it is gone. The
+        // lease is the only thing that brings the work back, which is why it is a timeout and not a flag.
+        clock.Advance(TimeSpan.FromMinutes(31));
+        await using var afterLease = fixture.CreateContext();
+        var reclaimed = await new PostgresProductionJobDispatcher(afterLease, clock)
+            .ClaimNextAsync(ProductionJobKind.Render, "worker-2", TimeSpan.FromMinutes(30), 3, CancellationToken.None);
+
+        Assert.NotNull(reclaimed);
+        Assert.Equal("worker-2", ReadOutboxEntry(production).ClaimedBy);
+    }
+
+    [Fact]
+    public async Task AJobThatUsedUpItsAttemptsIsLeftAloneRatherThanRetriedForEver()
+    {
+        EmptyOutbox();
+        var production = QueueRender();
+        var clock = new MovableClock(DateTimeOffset.UtcNow);
+
+        await using (var context = fixture.CreateContext())
+        {
+            var dispatcher = new PostgresProductionJobDispatcher(context, clock);
+            var claimed = (await dispatcher.ClaimNextAsync(ProductionJobKind.Render, "worker-1", TimeSpan.FromMinutes(30), 1, CancellationToken.None))!;
+            await dispatcher.ReleaseAsync(claimed.Id, "FFmpeg is not installed.", CancellationToken.None);
+        }
+
+        clock.Advance(TimeSpan.FromMinutes(31));
+        await using var exhausted = fixture.CreateContext();
+        Assert.Null(await new PostgresProductionJobDispatcher(exhausted, clock)
+            .ClaimNextAsync(ProductionJobKind.Render, "worker-1", TimeSpan.FromMinutes(30), 1, CancellationToken.None));
+
+        // It stays on the table, unfinished and with its reason, rather than being deleted or retried.
+        var stuck = ReadOutboxEntry(production);
+        Assert.Null(stuck.CompletedAt);
+        Assert.Equal(1, stuck.Attempts);
+        Assert.Contains("FFmpeg is not installed", stuck.LastError!, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task AWorkerThatOnlyHandlesRendersLeavesSpeechRowsAlone()
+    {
+        EmptyOutbox();
+        var production = CreateProductionWithScript();
+        var versionReadByCaller = GetVersion(production);
+        await using (var context = fixture.CreateContext())
+            await new PostgresProductionJobQueue(context)
+                .EnqueueTextToSpeechAsync(new TextToSpeechJob(production, "narration", "alloy", 1m),
+                    ProductionJobKey.ForTextToSpeech(production, versionReadByCaller), CancellationToken.None);
+
+        await using var dispatcherContext = fixture.CreateContext();
+        var dispatcher = new PostgresProductionJobDispatcher(dispatcherContext, new MovableClock(DateTimeOffset.UtcNow));
+
+        Assert.Null(await dispatcher.ClaimNextAsync(ProductionJobKind.Render, "worker-1", TimeSpan.FromMinutes(30), 3, CancellationToken.None));
+        var speech = await dispatcher.ClaimNextAsync(ProductionJobKind.TextToSpeech, "worker-1", TimeSpan.FromMinutes(30), 3, CancellationToken.None);
+        Assert.NotNull(speech);
+        Assert.Equal(ProductionJobKind.TextToSpeech, speech.Kind);
+    }
+
+    private Guid QueueRender()
+    {
+        var production = CreateProductionWithApprovedRights();
+        var manifest = new RenderManifest(production, 1080, 1920,
+            [new TimelineClip(GetAssets(production).Single().Id, 0, 3000, 0)], [], "voice/one.mp3");
+        using var context = fixture.CreateContext();
+        WorkflowUsing(context, new PostgresProductionJobQueue(context))
+            .QueueRenderAsync(production, GetVersion(production), manifest, CancellationToken.None).GetAwaiter().GetResult();
+        return production;
+    }
+
+    [Fact]
+    public void TheReviewQueueHoldsExactlyTheProductionsWaitingOnADecision()
+    {
+        var waitingOnScript = CreateProductionWithScript();
+        SubmitReview(waitingOnScript, ReviewKind.Script);
+        var waitingOnRights = CreateProductionWithAssetsReady();
+        SubmitReview(waitingOnRights, ReviewKind.Rights);
+        // Approved and rejected productions are not work for anybody; showing them in the queue is how a
+        // reviewer ends up re-reading a decision that was already made.
+        var alreadyApproved = CreateProductionWithApprovedRights();
+        var rejected = CreateProductionWithScript();
+        SubmitReview(rejected, ReviewKind.Script);
+        DecideReview(rejected, ReviewKind.Script, ReviewOutcome.Reject, "reviewer-1");
+        var notStarted = CreateProductionWithScript();
+        var mine = new[] { waitingOnScript, waitingOnRights, alreadyApproved, rejected, notStarted };
+
+        var scriptQueue = Mine(List(new ProductionQuery(awaitingReview: ReviewKind.Script)), mine);
+        var rightsQueue = Mine(List(new ProductionQuery(awaitingReview: ReviewKind.Rights)), mine);
+
+        Assert.Equal(new[] { waitingOnScript }, scriptQueue.Select(item => item.Id).ToArray());
+        Assert.Equal(new[] { waitingOnRights }, rightsQueue.Select(item => item.Id).ToArray());
+    }
+
+    [Fact]
+    public void TheQueueCanBeNarrowedToOneReviewKind()
+    {
+        var script = CreateProductionWithScript();
+        SubmitReview(script, ReviewKind.Script);
+        var rights = CreateProductionWithAssetsReady();
+        SubmitReview(rights, ReviewKind.Rights);
+        var publish = CreateProductionRendered();
+        SubmitReview(publish, ReviewKind.Publish);
+        var mine = new[] { script, rights, publish };
+
+        foreach (var (kind, expected) in new (ReviewKind Kind, Guid Expected)[]
+                 { (ReviewKind.Script, script), (ReviewKind.Rights, rights), (ReviewKind.Publish, publish) })
+        {
+            var queue = List(new ProductionQuery(awaitingReview: kind));
+
+            // One review kind, one production, even though all three gates are open at once: a queue that
+            // ignored the filter would show all three under every heading.
+            Assert.Equal(new[] { expected }, Mine(queue, mine).Select(item => item.Id).ToArray());
+            Assert.All(queue.Productions, item => Assert.Equal(kind, ProductionWorkflow.ReviewAwaitingDecision(item.State)));
+        }
+    }
+
+    [Fact]
+    public void TheBacklogCanBeNarrowedToOneState()
+    {
+        var inReview = CreateProductionWithScript();
+        SubmitReview(inReview, ReviewKind.Script);
+        var rightsApproved = CreateProductionWithApprovedRights();
+
+        var page = List(new ProductionQuery(state: ProductionState.RightsApproved));
+
+        Assert.Equal(new[] { rightsApproved }, Mine(page, new[] { inReview, rightsApproved }).Select(item => item.Id).ToArray());
+    }
+
+    [Fact]
+    public void APageIsBoundedAndTheTotalIsTheCountOfTheFilterNotOfThePage()
+    {
+        // The database is shared, so the exact rows on any page belong to whichever test ran before. What
+        // this pins down is the paging contract itself: a page is the size it asked for, pages do not
+        // overlap, and the total is wide enough to paginate with.
+        var small = List(new ProductionQuery(state: ProductionState.ScriptDraft, skip: 0, take: 2));
+        var samePageSizedBigger = List(new ProductionQuery(state: ProductionState.ScriptDraft, skip: 0, take: 200));
+        var next = List(new ProductionQuery(state: ProductionState.ScriptDraft, skip: 2, take: 2));
+
+        Assert.Equal(2, small.Productions.Count);
+        Assert.Equal(2, next.Productions.Count);
+        Assert.True(small.HasMore);
+        // The total is filter-wide: it does not shrink when the page does, so a client knows how many
+        // pages there are without counting rows itself.
+        Assert.Equal(small.TotalCount, samePageSizedBigger.TotalCount);
+        Assert.Equal(samePageSizedBigger.Productions.Count, samePageSizedBigger.TotalCount);
+        // Skipping advances the window instead of repeating it.
+        Assert.Empty(small.Productions.Select(item => item.Id).Intersect(next.Productions.Select(item => item.Id)));
+        Assert.Empty(List(new ProductionQuery(state: ProductionState.Published)).Productions);
+    }
+
+    [Fact]
+    public void TheQueueReportsTheVersionAReviewerHasToSendBack()
+    {
+        var production = CreateProductionWithScript();
+        SubmitReview(production, ReviewKind.Script);
+        var versionReadByReviewer = GetVersion(production);
+
+        var item = Assert.Single(Mine(List(new ProductionQuery(awaitingReview: ReviewKind.Script)), new[] { production }));
+
+        // A reviewer that guesses the version gets a conflict instead of overwriting another
+        // reviewer's work, which is the whole point of reading it here.
+        Assert.Equal(versionReadByReviewer, item.Version);
+        Assert.Equal(ProductionState.ScriptInReview, item.State);
+    }
+
+    private ProductionPage List(ProductionQuery query)
+    {
+        using var context = fixture.CreateContext();
+        return new PostgresProductionRepository(context).List(query);
+    }
+
+    /// <summary>
+    /// Narrows a page down to the productions this test created. The fixture shares one database across
+    /// the collection, so an unscoped "the queue holds exactly this" would fail on whatever an earlier
+    /// test happened to leave in review.
+    /// </summary>
+    private Production[] Mine(ProductionPage page, IReadOnlyCollection<Guid> mine) =>
+        page.Productions.Where(item => mine.Contains(item.Id)).ToArray();
+
+    private Guid CreateProductionWithAssetsReady()
+    {
+        var production = CreateProductionWithScript();
+        SubmitReview(production, ReviewKind.Script);
+        DecideReview(production, ReviewKind.Script, ReviewOutcome.Approve, "reviewer-1");
+        BeginAssetPreparation(production);
+        AttachLicensedAsset(production, "hook");
+        DeclareAssetsReady(production);
+        Assert.Equal(ProductionState.AssetsReady, GetState(production));
+        return production;
+    }
+
+    private Guid CreateProductionRendered()
+    {
+        var production = CreateProductionWithApprovedRights();
+        var manifest = new RenderManifest(production, 1080, 1920,
+            [new TimelineClip(GetAssets(production).Single().Id, 0, 3000, 0)], [], "voice/one.mp3");
+        using var context = fixture.CreateContext();
+        WorkflowUsing(context, new PostgresProductionJobQueue(context))
+            .QueueRenderAsync(production, GetVersion(production), manifest, CancellationToken.None).GetAwaiter().GetResult();
+        CompleteRendering(production);
+        Assert.Equal(ProductionState.Rendered, GetState(production));
+        return production;
+    }
+
+    /// <summary>
+    /// The outbox is one shared queue, not a per-production list, so a test that counts claims or claims
+    /// twice has to begin with nothing else queued. The collection runs one test at a time, so emptying
+    /// the table costs the other tests nothing: they each record the work they need.
+    /// </summary>
+    private void EmptyOutbox()
+    {
+        using var context = fixture.CreateContext();
+        context.JobOutbox.ExecuteDelete();
+    }
+
+    /// <summary>
+    /// Two dispatchers, two connections, one row. SKIP LOCKED is what makes the loser skip rather than
+    /// wait, and the assertion is that exactly one of them walks away with work.
+    /// </summary>
+    private async Task<(ClaimedProductionJob? First, ClaimedProductionJob? Second)> ClaimFromTwoWorkersAtOnce(Guid production)
+    {
+        await using var first = fixture.CreateContext();
+        await using var second = fixture.CreateContext();
+        var clock = new MovableClock(DateTimeOffset.UtcNow);
+
+        var claims = await Task.WhenAll(
+            new PostgresProductionJobDispatcher(first, clock).ClaimNextAsync(ProductionJobKind.Render, "worker-1", TimeSpan.FromMinutes(30), 3, CancellationToken.None),
+            new PostgresProductionJobDispatcher(second, clock).ClaimNextAsync(ProductionJobKind.Render, "worker-2", TimeSpan.FromMinutes(30), 3, CancellationToken.None));
+
+        Assert.Single(claims, claim => claim is not null);
+        Assert.Equal(production, claims.Single(claim => claim is not null)!.ProductionId);
+        return (claims[0], claims[1]);
+    }
+
+    /// <summary>
+    /// A clock the test moves by hand. Lease expiry is the one behaviour here that must not depend on
+    /// how long a test happens to take.
+    /// </summary>
+    private sealed class MovableClock(DateTimeOffset now) : TimeProvider
+    {
+        private DateTimeOffset _now = now;
+        public override DateTimeOffset GetUtcNow() => _now;
+        public void Advance(TimeSpan by) => _now = _now.Add(by);
+    }
+
+    [Fact]
     public void RegisteringTheSameStoryByHandIsRefusedAndPointsAtTheStoredCandidate()
     {
         var url = $"https://example.com/story-{Guid.NewGuid():N}";

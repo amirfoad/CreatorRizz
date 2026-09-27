@@ -18,6 +18,7 @@ public static class ProductionEndpoints
 
         productions.MapPost("", Create);
         productions.MapPost("/{id:guid}/scripts/draft-from-research", DraftFromResearch);
+        productions.MapGet("", List);
         productions.MapGet("/{id:guid}", Get);
         productions.MapGet("/{id:guid}/assets", GetAssets);
         productions.MapGet("/{id:guid}/scripts", GetScripts);
@@ -70,6 +71,45 @@ public static class ProductionEndpoints
         // A provider failure is upstream of this service, so it is not reported as a refused draft.
         catch (ScriptGenerationFailedException exception) { return ApiResults.ProviderFailure(exception); }
         catch (InvalidOperationException exception) { return HttpResults.Conflict(new { error = exception.Message }); }
+    }
+
+    /// <summary>
+    /// The backlog, and the review queue when <c>awaitingReview</c> is given. Both are reads of the
+    /// same table, so they are one endpoint with two filters rather than two endpoints that drift.
+    /// </summary>
+    private static IResult List(string? state, string? awaitingReview, int? skip, int? take, CreatorRizzWorkflow workflow)
+    {
+        ProductionState? parsedState = null;
+        if (!string.IsNullOrWhiteSpace(state))
+        {
+            if (!Enum.TryParse<ProductionState>(state, true, out var value)) return ApiResults.UnknownFilter("state", state);
+            parsedState = value;
+        }
+
+        ReviewKind? parsedReview = null;
+        if (!string.IsNullOrWhiteSpace(awaitingReview))
+        {
+            if (!Enum.TryParse<ReviewKind>(awaitingReview, true, out var kind)) return ApiResults.UnknownFilter("awaitingReview", awaitingReview);
+            parsedReview = kind;
+        }
+
+        try
+        {
+            var query = new ProductionQuery(parsedState, parsedReview, skip ?? 0, take ?? ProductionQuery.DefaultPageSize);
+            var page = workflow.ListProductions(query);
+            return HttpResults.Ok(new ProductionListResponse(
+                page.Productions.Select(production => new ProductionListItemResponse(
+                    production.Id,
+                    production.TopicCandidateId,
+                    production.State,
+                    production.Version,
+                    production.CreatedAt,
+                    ProductionWorkflow.ReviewAwaitingDecision(production.State))).ToArray(),
+                page.TotalCount,
+                page.Skip,
+                page.HasMore));
+        }
+        catch (ArgumentOutOfRangeException exception) { return HttpResults.BadRequest(new { error = exception.Message }); }
     }
 
     private static IResult Get(Guid id, HttpContext context, CreatorRizzWorkflow workflow)

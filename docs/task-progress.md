@@ -52,10 +52,10 @@
 - [x] ثبت اتمیک enqueue؛ `QueueRenderAsync` تغییر وضعیت و ثبت کار را در یک transaction می‌نویسد
 - [x] `IWorkflowTransaction` در Application و `PostgresWorkflowTransaction` در Infrastructure، هر دو روی یک context اشتراکی
 - [x] کلید idempotency با ایندکس یکتا روی `idempotency_key`؛ enqueue تکراری یک کار است نه دو
-- [ ] provider واقعی TTS و FFmpeg؛ `FfmpegRenderExecutor` فقط `ffmpeg -version` می‌زند و خطا می‌دهد
-- [ ] `IRenderExecutor` در DI و `BackgroundService` که ردیف‌های `job_outbox` را claim و اجرا کند
-- [ ] احراز هویت API و حذف نقش از هدر `X-Role`
-- [ ] endpoint فهرست production و صف بازبینی
+- [ ] provider واقعی TTS هنوز نیست؛ FFmpeg به‌عنوان executor اضافه شد ولی روی این ماشین نصب نیست، پس اجرای واقعی encode تأیید نشده
+- [x] `IRenderExecutor` در DI و `RenderJobWorker` که ردیف‌های `job_outbox` را با lease و `FOR UPDATE SKIP LOCKED` claim، اجرا و کامل یا آزاد می‌کند
+- [x] احراز هویت API: JWT bearer با `FallbackPolicy` روی همهٔ endpointها، نقش `reviewer` از claim توکن و حذف نقش از هدر `X-Role` و از بدنهٔ درخواست
+- [x] endpoint فهرست production و صف بازبینی: `GET /productions` با فیلتر `state` و `awaitingReview`، صفحه‌بندی محدود و `TotalCount`
 - [ ] React operations dashboard؛ رابط فعلی فقط صفحهٔ برند است و API را صدا نمی‌زند
 - [ ] OAuth و upload private به YouTube؛ `IYouTubePublisher` هنوز به هیچ endpoint یا transitionی وصل نیست
 - [ ] پایلوت 3 Short در روز
@@ -71,6 +71,8 @@
 - [ ] اتصال کانال، دریافت داده و داشبورد رشد قابل استفاده
 - [ ] پرداخت، اشتراک، مجوز استفاده و دفتر مصرف اعتبار
 - [ ] صف پایدار، worker تولید واقعی و storage مشترک
+
+مصرف صف برای Render انجام شد (پایین). TTS، FFmpeg واقعی و storage اشتراکی میان processها هنوز کامل نیست.
 - [ ] استقرار production و پایلوت پولی با provider واقعی
 
 این نوبت پژوهش و مستندسازی بود؛ کد تغییر نکرد و build/test تازه اجرا نشد. موارد فوق به معنی اجرای قابلیت یا آمادگی فروش نیستند.
@@ -86,4 +88,42 @@
 
 **آنچه اجرا نشد:** `CreatorRizz.Persistence.Tests` در این نوبت اجرا نشد. دسترسی به registry داکر denied بود، PostgreSQL بالا نیامد و هر ۳۲ تست integration شکست خوردند. این شکست محیطی است، نه تأیید سلامت آن‌ها. `dotnet build` بدون warning، ۵۷ تست `CreatorRizz.Domain.Tests`، و در وب `npm ci`، `npm run typecheck` و `npm run build` همگی سبز بودند.
 
-آخرین به‌روزرسانی: 2026-09-26
+## نوبت بعد: احراز هویت API و هم‌ترازی مستندات — 2026-09-27
+
+کد احراز هویت در commit `8748a9f` نوشته شده بود ولی هیچ‌کدام از README، همین فایل و `docs/architecture-review.md` به‌روز نشده بودند، بنابراین هر سه هنوز می‌گفتند API احراز هویت ندارد. این نوبت ادعاها را با کد هم‌تراز کرد.
+
+- احراز هویت وجود دارد: `ApiAuthentication` در `src/CreatorRizz.Api/Authentication`، JWT bearer با `MapInboundClaims = false` و `FallbackPolicy` روی همهٔ endpointها. فقط `/health/*` با `AllowAnonymous` باز است. هدر `X-Role` و فیلد بازبین در بدنهٔ درخواست حذف شده‌اند و `ReviewerAccess.ReadId` نام بازبین را از claim `sub` می‌خواند.
+- **سه تست از ده تست `ReviewerGateTests` شکست می‌خوردند و هیچ‌چیز را واقعاً تأیید نمی‌کردند.** `BearerOptions` یک `ServiceCollection` خالی را build می‌کرد، ولی `LocalSigningKeysFromUserJwts` در سازنده‌اش `IConfiguration` می‌گیرد. خطای resolve جای `OptionsValidationException`ی را می‌گرفت که تست می‌خواست بسنجد، پس تست‌های «startup منبع توکن را رد می‌کند» هرگز آن شرط را نرسیدند. یک helper مشترک اضافه شد که configuration را در container ثبت می‌کند، همان‌طور که host واقعی می‌کند.
+- **آنچه اجرا شد:** `dotnet build` در Release بدون warning و هر ۶۸ تست `CreatorRizz.Domain.Tests` سبز، شامل هر ۱۰ تست گیت بازبین.
+- **آنچه اجرا نشد:** `CreatorRizz.Persistence.Tests`. daemon داکر در این محیط بالا نیست، پس PostgreSQL در دسترس نبود و هر ۳۵ تست integration شکست خوردند. این شکست محیطی است، نه تأیید سلامت آن‌ها.
+
+محدودیتی که باقی است و در README ثبت شد: مدل دسترسی فقط «توکن معتبر» و «نقش reviewer» است. جداسازی مشتری، workspace و مالکیت production هنوز در مدل وجود ندارد.
+
+## نوبت بعد: مصرف صف render و executor واقعی FFmpeg — 2026-09-27
+
+این نوبت شکاف بزرگ مسیر render را بست: کاری که `QueueRenderAsync` ثبت می‌کرد هیچ‌کس آن را برنمی‌داشت، و `FfmpegRenderExecutor` هم فقط `ffmpeg -version` می‌زد و خطا می‌داد.
+
+- `job_outbox` ستون‌های `claimed_at`, `claimed_by`, `completed_at`, `attempts`, `last_error` گرفت و migration `ClaimOutboxWork` آن‌ها را اضافه کرد. حذف ردیف جای lease نشست: کاری که workerش می‌میرد خودش برمی‌گردد و دلیل شکست روی ردیف می‌ماند.
+- `IProductionJobDispatcher` در Application و `PostgresProductionJobDispatcher` در Infrastructure. claim یک `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1)` است، پس دو worker هرگز یک ردیف را نمی‌گیرند و بازنده پشت قفل هم نمی‌ایستد بلکه ردیف بعدی را برمی‌دارد.
+- `RenderJobWorker` فقط job نوع `Render` را claim می‌کند. `TextToSpeech` عمداً باقی ماند چون provider واقعی و محل ثبت خروجی صوتی وجود ندارد.
+- **اشتباهی که تست نگرفت و تست گرفت:** اولین نسخه `RenderJobWorker` نسخهٔ production را حدس می‌زد. کار، نسخهٔ فعلی production را از دیتابیس می‌خواند و همان را به `CompleteRendering` می‌دهد تا قاعدهٔ If-Match دور زده نشود.
+- **دو باگ که فقط با build/test بیرون آمدند:** `FfmpegRenderExecutor` و جدول outbox هر دو اضافه شده بودند ولی برنامه اصلاً کامپایل نمی‌شد؛ `using CreatorRizz.Workers;` از `Program.cs` حذف شده بود و helperها `IServiceProvider` می‌گرفتند و `ServiceProvider` صدا می‌زدند. بعد `SingleOrDefaultAsync` روی خروجی `FromSql` خطا داد، چون EF روی `UPDATE` دوباره SQL نمی‌چسباند.
+- **اشکال تست که خودم ساختم:** تست‌های dispatcher ابتدا ردیف کار دیگر تست‌ها را claim می‌کردند، چون outbox یک صف مشترک است نه فهرست هر production. حالا هر تست با `EmptyOutbox()` شروع می‌شود و این محدودیت در کامنت آمده، نه در تنظیمات مخفی.
+- **یک اشکال طراحی که پیش از تست پیدا شد:** `ObjectStorage:RootPath` در هر دو appsettings خالی بود و به `AppContext.BaseDirectory` برمی‌گشت، یعنی هر process پوشهٔ خودش را می‌ساخت و worker هرگز فایلی را که API ذخیره کرده نمی‌دید. حالا مقدار پیش‌فرض `storage/objects` است و مقدار خالی رد می‌شود.
+- **آنچه اجرا شد:** `dotnet build` در Release بدون warning، ۷۶ تست `CreatorRizz.Domain.Tests` (۸ تست تازهٔ `FfmpegArgumentTests`) و ۴۲ تست `CreatorRizz.Persistence.Tests` روی PostgreSQL واقعی، شامل ۷ تست تازهٔ dispatcher.
+- **آنچه اجرا نشد:** FFmpeg روی این ماشین نصب نیست، پس هیچ encode واقعی اجرا نشد. تست‌ها فقط ساخت دستور را می‌سنجند: ترتیب inputها، `-ss`/`-t` هر کلیپ، ترتیب بر اساس زمان‌بندی و escape مسیر subtitle ویندوز. provider واقعی TTS هم هنوز وجود ندارد. چک‌های فرانت‌اند هم اجرا نشد چون `node_modules` در این محیط نصب نیست (`tsc` پیدا نشد) و در این نوبت هیچ فایل وبی تغییر نکرد.
+
+## نوبت بعد: فهرست production و صف بازبینی — 2026-09-27
+
+بدون این endpoint، صف بازبینی از API قابل ساخت نبود: فقط خواندن با id ممکن بود و هیچ راهی نبود که بازبین ببیند چه چیزی منتظر تصمیم اوست.
+
+- `GET /productions` با فیلترهای `state` و `awaitingReview`، `skip` و `take`. صف بازبینی endpoint جدا نیست چون همان ردیف‌های همان جدول‌اند؛ یک production که منتظر تصمیم است همان production است که state‌اش این را می‌گوید.
+- **نگاشت state به نوع بازبینی در `ProductionWorkflow.ReviewAwaitingDecision` زندگی می‌کند**، کنار همان transitionهایی که آن state را می‌سازند. اگر query این نگاشت را دوباره در خودش می‌داشت، دومین جایی بود که باید با گذر زمان هماهنگ بماند. تست `EveryWaitingStateIsReachableBySubmittingThatSameReview` دو سر نگاشت را به هم می‌دوزد.
+- صفحه محدود است و `TotalCount` شمارش کل فیلتر است نه شمارش صفحه، وگرنه کلاینت نمی‌تواند صفحه‌بندی کند. `HasMore` به `Take` نیاز داشت: بدون آن یک صفحهٔ ناقص در انتهای نتایج «صفحهٔ بعدی» گزارش می‌کرد که وجود ندارد و داشبورد دکمهٔ next را برای همیشه نشان می‌داد. این را اولین تست نوشتم و خودِ تست اشتباه بود.
+- نسخهٔ production در هر ردیف صف برگردانده می‌شود، چون بازبین باید همان را به‌عنوان `If-Match` بفرستد. حدس زدن نسخه یعنی گرفتن conflict به‌جای بازنویسی کار بازبین دیگر.
+- **اشتباه خودم در تست:** اول نسخهٔ کلاس را طوری نوشتم که کل صفحه را برمی‌گرداند و بعد با اسکوپ‌دار کردن درستش کردم. دیتابیس fixture بین کل collection مشترک است، پس «صف دقیقاً این را دارد» بدون محدود کردن به productionهای خودِ تست روی ردیف تست قبلی می‌شکست. helper `Mine` این محدودیت را در کامنت خودش نگه می‌دارد.
+- **همین آلودگی یک تست قدیمی را هم خراب کرد:** `AWorkerThatOnlyHandlesRendersLeavesSpeechRowsAlone` انتظار داشت هیچ ردیف Render قابل claimی وجود نداشته باشد، ولی تست‌های تازه ردیف Render جا می‌گذاشتند. حالا آن هم اول `EmptyOutbox()` می‌کند.
+- **آنچه اجرا شد:** `dotnet build` در Release بدون warning، ۸۶ تست `CreatorRizz.Domain.Tests` (۱۰ تست تازهٔ `ReviewQueueTests`) و ۴۷ تست `CreatorRizz.Persistence.Tests` روی PostgreSQL واقعی (۵ تست تازهٔ صف و صفحه‌بندی).
+- **آنچه اجرا نشد:** هیچ تست HTTP وجود ندارد؛ این پروژه harness ای برای بالا آوردن API ندارد و برای همین رفتار endpoint از جمله ۴۰۰ِ فیلتر ناشناس با تست پوشش داده نشده. نگاشت فیلتر و خود query تست شده‌اند ولی لایهٔ HTTP نه. چک فرانت‌اند هم اجرا نشد چون `node_modules` نصب نیست.
+
+آخرین به‌روزرسانی: 2026-09-27

@@ -1,14 +1,8 @@
 import { createRoot } from 'react-dom/client';
+import { App } from './App';
 import './styles.css';
 
-function App() {
-  return <main className="app-shell">
-    <header className="brand-bar">
-      <img className="brand-logo" src="/branding/creatorrizz-logo.png" alt="CreatorRizz" />
-      <div><h1>CreatorRizz</h1><p>Content operations</p></div>
-    </header>
-    <section className="workspace"><h2>Production workspace</h2><p>پایه داشبورد عملیاتی آماده است.</p></section>
-  </main>;
-}
+const container = document.getElementById('root');
+if (container === null) throw new Error('index.html has no #root to mount into.');
 
-createRoot(document.getElementById('root')!).render(<App />);
+createRoot(container).render(<App />);

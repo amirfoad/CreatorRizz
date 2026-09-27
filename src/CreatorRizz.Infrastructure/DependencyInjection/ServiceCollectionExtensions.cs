@@ -52,8 +52,18 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkflowTransaction>(provider => new PostgresWorkflowTransaction(
             provider.GetRequiredService<CreatorRizzDbContext>()));
         services.AddScoped<IProductionJobQueue, PostgresProductionJobQueue>();
-        services.AddSingleton<IObjectStorage>(provider => new LocalObjectStorage(
-            Path.Combine(AppContext.BaseDirectory, "storage")));
+        services.AddScoped<IProductionJobDispatcher>(provider => new PostgresProductionJobDispatcher(
+            provider.GetRequiredService<CreatorRizzDbContext>(),
+            provider.GetRequiredService<TimeProvider>()));
+        services.AddSingleton(provider =>
+        {
+            // One folder both processes agree on. Resolved from the working directory rather than
+            // AppContext.BaseDirectory, because two processes with two base directories cannot see
+            // each other's files, and the worker has to read what the API stored.
+            var root = configuration.GetSection(ObjectStorageOptions.SectionName).Get<ObjectStorageOptions>()?.RootPath;
+            ArgumentException.ThrowIfNullOrWhiteSpace(root, $"{ObjectStorageOptions.SectionName}:{nameof(ObjectStorageOptions.RootPath)}");
+            return (IObjectStorage)new LocalObjectStorage(root);
+        });
 
         // Redirects are walked by RssDiscoverySource so every hop is allowlist checked, which only works
         // if the handler does not follow them on its own.
